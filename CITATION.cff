@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "North"
+  given-names: "Sophie"
+- family-names: "Furber"
+  given-names: "Jessica"
+  orcid: "https://orcid.org/0009-0008-4003-7920"
+title: "Sensitivity analysis for an ecoepidemiological model of Rift Valley fever virus transmission"
+version: 1.0
+doi: 
+date-released: 
+url: "https://github.com/JFurber/Sensitivity-Analysis-RVFV"
