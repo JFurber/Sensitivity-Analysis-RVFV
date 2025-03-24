@@ -6,6 +6,9 @@ authors:
 - family-names: "Furber"
   given-names: "Jessica"
   orcid: "https://orcid.org/0009-0008-4003-7920"
+- family-names: "Lo Iacono"
+  given-names: "Giovanni"
+  orcid: "https://orcid.org/0000-0002-6150-2843"
 title: "Sensitivity analysis for an ecoepidemiological model of Rift Valley fever virus transmission"
 version: 1.0
 doi: 
