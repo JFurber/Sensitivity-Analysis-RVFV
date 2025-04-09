@@ -1,0 +1,162 @@
+---
+title: "SA comparison to constants"
+author: "Jessica Furber"
+date: "2025-03-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This code is used to compare the constants
+
+```{r load libraries}
+library(tidyverse)
+library(cowplot)
+```
+
+Pull in the csv data from the respective folders - change the path to the appropriate folder (PropFind/Temperature/WaterBodies). Also extracts the values for the water, temperature and prop_find.
+
+```{r import data}
+rm(list = ls())
+
+# Get only CSV files that end with "sims.csv"
+csv_list_sims <- list.files(
+  # path = "Output/SobolIndices/Aedes/Temperature",
+  # path = "Output/SobolIndices/Aedes/WaterBodies",
+  path = "Output/SobolIndices/Aedes/PropFind",
+  pattern = ".csv$", 
+  full.names = TRUE
+)
+
+# Import the filtered CSV files
+csv_imports <- purrr::map_df(csv_list_sims, ~ read_csv(.x, id = "path"))
+
+# Extract the temperature
+csv_imports$temperature <- as.numeric(gsub(".*A([0-9]+)temp_.*", "\\1", csv_imports$path))
+
+# Extract the Waterbody
+csv_imports$water <- as.numeric(gsub(".*?temp_([0-9]+)wb.*", "\\1", csv_imports$path))
+
+# Extract the Propfind
+csv_imports$prop <- as.numeric(gsub(".*?wb_([0-9\\.]+)pf.*", "\\1", csv_imports$path))
+
+# Select relevant columns
+csv_imports_temp <- csv_imports %>%
+  dplyr::select(parameters, sensitivity, original,temperature)
+
+csv_imports_water <- csv_imports %>%
+  dplyr::select(parameters, sensitivity, original,water)
+
+csv_imports_prop <- csv_imports %>%
+  dplyr::select(parameters, sensitivity, original,prop)
+
+```
+
+```{r - save to csv to compare  on file}
+# write.csv(csv_imports_temp, file = paste0("Output/SobolIndices/Aedes/Temperature/", "Temperature_compare.csv"))
+# write.csv(csv_imports_water, file = paste0("Output/SobolIndices/Aedes/WaterBodies/", "Water_compare.csv"))
+write.csv(csv_imports_prop, file = paste0("Output/SobolIndices/Aedes/PropFind/", "Prop_compare.csv"))
+```
+
+
+Create plots for each constant parameter. Not all of these will be needed, you can choose which constant parameter you are comparing to plot and then save. This code creates a plot for each one and then saves them all.
+
+```{r}
+
+# Plot for Temperature
+plot_temperature <- ggplot(data = csv_imports_temp, aes(x = temperature, y = original, col = parameters)) + 
+                    geom_line() + 
+                    geom_point() + 
+                    facet_wrap(~sensitivity, scales = "free",
+                               labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+                    labs(x = expression("Temperature (" * degree * "C)"),
+                         y = "Sobol Sensitivity Index",
+                         col = "Parameters") +
+                    scale_color_viridis_d(
+                      option = "viridis", 
+                     labels = c(expression(italic(A[A])), 
+                                expression(italic(kappa[A])), 
+                                expression(italic(b[A])), 
+                                expression(italic(rho[A]^max)))) +
+                    scale_x_continuous(breaks = unique(csv_imports_temp$temperature)) +
+                    theme_classic()+
+                    theme(axis.title = element_text(size = 10),    # Axis labels
+                          axis.text = element_text(size = 8),      # Tick labels
+                          strip.text = element_text(size = 8),     # Facet titles
+                          plot.title = element_text(size = 12)     # Main title) 
+                          )
+
+plot_water <- ggplot(data = csv_imports_water, aes(x = water, y = original, col = parameters)) + 
+                    geom_line() + 
+                    geom_point() + 
+                    facet_wrap(~sensitivity, scales = "free",
+                               labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+                    labs(x = expression("Water Body Area (" * m^2 * ")"),
+                         y = "Sobol Sensitivity Index",
+                         col = "Parameters") +
+                    scale_color_viridis_d(
+                      option = "viridis", 
+                     labels = c(expression(italic(A[A])), 
+                                expression(italic(kappa[A])), 
+                                expression(italic(b[A])), 
+                                expression(italic(rho[A]^max)))) +
+                    scale_x_continuous(breaks = unique(csv_imports_water$water)) +
+                    theme_classic()+
+                    theme(axis.title = element_text(size = 10),    # Axis labels
+                          axis.text = element_text(size = 8),      # Tick labels
+                          strip.text = element_text(size = 8),     # Facet titles
+                          plot.title = element_text(size = 12)     # Main title) 
+                          )
+
+plot_prop <- ggplot(data = csv_imports_prop, aes(x = prop, y = original, col = parameters)) + 
+                    geom_line() + 
+                    geom_point() + 
+                    facet_wrap(~sensitivity, scales = "free",
+                               labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+                    labs(x = expression("Detection Probability (" * italic(p[f]) * ")"),
+                         y = "Sobol Sensitivity Index",
+                         col = "Parameters") +
+                    scale_color_viridis_d(
+                      option = "viridis",
+                     labels = c(expression(italic(A[A])), 
+                                expression(italic(kappa[A])), 
+                                expression(italic(b[A])), 
+                                expression(italic(rho[A]^max)))) +
+                    scale_x_continuous(breaks = unique(csv_imports_prop$prop)) +
+                    theme_classic()+
+                    theme(axis.title = element_text(size = 10),    # Axis labels
+                          axis.text = element_text(size = 8),      # Tick labels
+                          strip.text = element_text(size = 8),     # Facet titles
+                          plot.title = element_text(size = 12)     # Main title) 
+                          )
+
+```
+
+Save them all and then move to the appropriate folder before doing the next parameter.
+
+```{r save plot}
+
+ggsave(plot_temperature, filename = "Output/SobolIndices/Aedes/Aedes_temperature.png",
+       width = 6, height = 2)
+ggsave(plot_temperature,
+             filename = "Output/SobolIndices/Aedes/Aedes_temperature.pdf",
+             width = 6, height = 2,device=pdf)
+
+ggsave(plot_water, filename = "Output/SobolIndices/Aedes/Aedes_water.png",
+       width = 6, height = 2)
+ggsave(plot_water,
+             filename = "Output/SobolIndices/Aedes/Aedes_water.pdf",
+             width = 6, height = 2,device=pdf)
+
+ggsave(plot_prop, filename = "Output/SobolIndices/Aedes/Aedes_prop.png",
+       width = 6, height = 2)
+ggsave(plot_prop,
+             filename = "Output/SobolIndices/Aedes/Aedes_prop.pdf",
+             width = 6, height = 2,device=pdf)
+```
+

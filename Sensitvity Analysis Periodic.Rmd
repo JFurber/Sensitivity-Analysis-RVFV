@@ -1,0 +1,243 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r - import packages}
+rm(list = ls())
+
+library(rstudioapi)
+library(deSolve)
+library(rootSolve)
+library(tidyverse)
+library(sensobol)
+library(data.table)
+library(EnvStats)
+library(nimble)
+
+source("Single_System_periodic.R", chdir = TRUE)
+```
+
+```{r - parameters that can change}
+SobolSims <<- 9000
+day_length <<- 365 * 2
+modeloutput <<- "allMozadultsmeanlast28days"
+what <<- "SA" # one or SA
+
+livestocktotal <<- 500 
+cellarea <<- 1 
+prop_find <<- 0.1 # start mid = 10%
+
+```
+
+```{r - set up Sobol matrices}
+#lambda_C = b_C in paper
+lambda_C_q <<- "qnorm"; lambda_C_mean <<- 149 ; lambda_C_sd <<- 16.18
+#lambda_A = b_A in paper
+lambda_A_q <<- "qnorm"; lambda_A_mean <<- 55 ; lambda_A_sd <<- 2.80
+#rho_max_C
+rho_max_C_q <<- "qunif"; rho_max_C_min <<- 500000 ; rho_max_C_max <<- 20000000
+#rho_max_A
+rho_max_A_q <<- "qunif"; rho_max_A_min <<- 20000 ; rho_max_A_max <<- 1000000
+#A_C
+A_C_q <<- "qtri"; A_C_min <<- 196000 ; A_C_max <<- 15904000 ; A_C_mode <<- 9621000 
+#A_A
+A_A_q <<- "qgamma"; A_A_shape <<- 2.5; A_A_scale <<- 10000
+#kappa_C 
+kappa_C_q <<- "qunif"; kappa_C_min <<- 0.001 ; kappa_C_max <<- 0.999
+#kappa_A
+kappa_A_q <<- "qunif"; kappa_A_min <<- 0.001 ; kappa_A_max <<- 0.999
+
+
+
+factors_C <<- c("lambda_C", 
+                "rho_max_C",
+                "A_C", 
+                "kappa_C")
+
+factors_A <<- c("lambda_A", 
+                "rho_max_A",
+                "A_A", 
+                "kappa_A")
+
+order <- "first"
+sobolmatrix_C <<- sobol_matrices(N=SobolSims/6, params=factors_C, order=order)
+sobolmatrix_A <<- sobol_matrices(N=SobolSims/6, params=factors_A, order=order)
+samples_C <- sobolmatrix_C
+samples_A <- sobolmatrix_A
+
+samples_C[, "lambda_C"] <- 
+  match.fun(get(paste0("lambda_C", "_q")))(samples_C[, paste0("lambda_C")],
+                                           mean = get(paste0("lambda_C", "_mean")),
+                                           sd = get(paste0("lambda_C", "_sd")))
+
+samples_C[, "rho_max_C"] <- 
+  match.fun(get(paste0("rho_max_C", "_q")))(samples_C[, paste0("rho_max_C")],
+                                            min = get(paste0("rho_max_C", "_min")),
+                                            max = get(paste0("rho_max_C", "_max")))
+
+samples_C[, "A_C"] <- 
+  match.fun(get(paste0("A_C", "_q")))(samples_C[, paste0("A_C")],
+                                      min = get(paste0("A_C", "_min")),
+                                      max = get(paste0("A_C", "_max")),
+                                      mode = get(paste0("A_C", "_mode")))
+
+samples_C[, "kappa_C"] <- 
+  match.fun(get(paste0("kappa_C", "_q")))(samples_C[, paste0("kappa_C")],
+                                          min = get(paste0("kappa_C", "_min")),
+                                          max = get(paste0("kappa_C", "_max")))
+samples_A[, "lambda_A"] <-
+  match.fun(get(paste0("lambda_A", "_q")))(samples_A[, paste0("lambda_A")],
+                                           mean = get(paste0("lambda_A", "_mean")),
+                                           sd = get(paste0("lambda_A", "_sd")))
+
+samples_A[, "rho_max_A"] <-
+  match.fun(get(paste0("rho_max_A", "_q")))(samples_A[, paste0("rho_max_A")],
+                                            min = get(paste0("rho_max_A", "_min")),
+                                            max = get(paste0("rho_max_A", "_max")))
+
+samples_A[, "A_A"] <-
+  match.fun(get(paste0("A_A", "_q")))(samples_A[, paste0("A_A")],
+                                      shape = get(paste0("A_A", "_shape")),
+                                      scale = get(paste0("A_A", "_scale")))
+
+samples_A[, "kappa_A"] <-
+  match.fun(get(paste0("kappa_A", "_q")))(samples_A[, paste0("kappa_A")],
+                                          min = get(paste0("kappa_A", "_min")),
+                                          max = get(paste0("kappa_A", "_max")))
+
+rm(A_A_q, A_A_scale, A_A_shape)
+rm(A_C_max, A_C_min, A_C_mode, A_C_q)
+rm(kappa_A_max, kappa_A_min,kappa_A_q)
+rm(kappa_C_max,kappa_C_min,kappa_C_q)
+rm(lambda_A_mean,lambda_A_q,lambda_A_sd)
+rm(lambda_C_mean,lambda_C_q,lambda_C_sd)
+rm(rho_max_A_max,rho_max_A_min,rho_max_A_q)
+rm(rho_max_C_max,rho_max_C_min,rho_max_C_q)
+
+rm(sobolmatrix_A,sobolmatrix_C)
+```
+
+
+```{r - Sobol run: Culex}
+source("SA_MultipleRuns.R", chdir = TRUE)
+
+# Measure the time taken for running multiple simulations
+time_taken <- system.time({
+  
+  # Run simulation multiple times through different parameter combos:
+  multiRunOutput <- multiRun_CulexOnly(as.matrix(samples_C))
+  
+})
+
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+
+# Obtain Sobol Sensitivity Indices:
+indices <- sobol_indices(Y = multiRunOutput, params = factors_C, 
+                         N = (SobolSims/6))
+
+plottableIndices <- as.data.frame(indices$results)
+
+```
+
+```{r - Sobol run: Aedes}
+source("SA_MultipleRuns.R", chdir = TRUE)
+
+# Measure the time taken for running multiple simulations
+time_taken <- system.time({
+  
+  # Run simulation multiple times through different parameter combos:
+  multiRunOutput <- multiRun_AedesOnly(as.matrix(samples_A))
+  
+})
+
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+
+# Obtain Sobol Sensitivity Indices:
+indices <- sobol_indices(Y = multiRunOutput, params = factors_A, 
+                         N = (SobolSims/6))
+
+plottableIndices <- as.data.frame(indices$results)
+
+```
+
+```{r - plot and save}
+
+#Change based on which mosquito investigating:
+moz <- "Ap"
+# moz <- "Cp"
+
+if (moz == "Cp"){
+indexPlot <- ggplot(data = plottableIndices, aes(x = parameters, y = original, colour = parameters)) +
+  geom_point(shape = "square", size = 2) +
+  facet_wrap(~sensitivity,
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+  theme_classic() +
+  labs(
+    y = "Sobol Sensitivity Index",
+    x = "Parameter"
+  ) +
+  scale_x_discrete(
+    labels = c(
+      expression(italic(A[C])), 
+      expression(italic(kappa[C])), 
+      expression(italic(b[C])), 
+      expression(italic(rho[C]^max))
+    )
+  ) +
+  scale_color_viridis_d(
+                      option = "viridis",
+  ) +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 10),    # Axis labels
+        axis.text = element_text(size = 8),      # Tick labels
+        strip.text = element_text(size = 8),     # Facet titles
+        plot.title = element_text(size = 12)     # Main title) 
+  )
+}
+if (moz == "Ap"){
+  indexPlot <- ggplot(data = plottableIndices, aes(x = parameters, y = original, colour = parameters)) +
+  geom_point(shape = "square", size = 2) +
+  facet_wrap(~sensitivity,
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+  theme_classic() +
+  labs(
+    y = "Sobol Sensitivity Index",
+    x = "Parameter"
+  ) +
+  scale_x_discrete(
+    labels = c(
+      expression(italic(A[A])), 
+      expression(italic(kappa[A])), 
+      expression(italic(b[A])), 
+      expression(italic(rho[A]^max))
+    )
+  ) +
+  scale_color_viridis_d(
+                      option = "viridis",
+  ) +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 10),    # Axis labels
+        axis.text = element_text(size = 8),      # Tick labels
+        strip.text = element_text(size = 8),     # Facet titles
+        plot.title = element_text(size = 12)     # Main title) 
+  )
+}
+  
+  
+file_Title <<- paste0(moz,"periodic",prop_find,"pf")
+
+ggsave(plot = indexPlot, file = paste0("Output/Periodic/", file_Title, "indices.png"),
+       width = 6, height = 2)
+ggsave(plot = indexPlot, file = paste0("Output/Periodic/", file_Title, "indices.pdf"),
+       width = 6, height = 2, device = pdf)
+write.csv(plottableIndices, file = paste0("Output/Periodic/", file_Title, "indices.csv"))
+
+```
+
+
+
+

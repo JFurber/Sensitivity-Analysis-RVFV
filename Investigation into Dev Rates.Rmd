@@ -1,0 +1,717 @@
+---
+title: "Investigation into Development Rates"
+author: "Jessica Furber"
+date: "2025-03-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r - import packages}
+rm(list = ls())
+
+library(rstudioapi)
+library(deSolve)
+library(rootSolve)
+library(tidyverse)
+library(sensobol)
+library(data.table)
+library(EnvStats)
+library(nimble)
+
+source("Functions/development_rate.R", chdir = TRUE)
+source("Functions/mortality_rate.R", chdir = TRUE)
+source("Functions/oviposition_rate.R", chdir = TRUE)
+source("Functions/biting_rate.R",chdir = TRUE)
+
+rm(oviposition_rate__periodic_Aedes,oviposition_rate_periodic_Culex)
+```
+
+```{r - set up Sobol matrices and find medium values}
+SobolSims <<- 9000
+
+#lambda_C = b_C in paper
+lambda_C_q <<- "qnorm"; lambda_C_mean <<- 149 ; lambda_C_sd <<- 16.18
+#lambda_A = b_A in paper
+lambda_A_q <<- "qnorm"; lambda_A_mean <<- 55 ; lambda_A_sd <<- 2.80
+#rho_max_C
+rho_max_C_q <<- "qunif"; rho_max_C_min <<- 500000 ; rho_max_C_max <<- 20000000
+#rho_max_A
+rho_max_A_q <<- "qunif"; rho_max_A_min <<- 20000 ; rho_max_A_max <<- 1000000
+#A_C
+A_C_q <<- "qtri"; A_C_min <<- 196000 ; A_C_max <<- 15904000 ; A_C_mode <<- 9621000 
+#A_A
+A_A_q <<- "qgamma"; A_A_shape <<- 2.5; A_A_scale <<- 10000
+#kappa_C 
+kappa_C_q <<- "qunif"; kappa_C_min <<- 0.001 ; kappa_C_max <<- 0.999
+#kappa_A
+kappa_A_q <<- "qunif"; kappa_A_min <<- 0.001 ; kappa_A_max <<- 0.999
+
+
+
+factors_C <<- c("lambda_C", 
+                "rho_max_C",
+                "A_C", 
+                "kappa_C")
+
+factors_A <<- c("lambda_A", 
+                "rho_max_A",
+                "A_A", 
+                "kappa_A")
+
+order <- "first"
+sobolmatrix_C <<- sobol_matrices(N=SobolSims/6, params=factors_C, order=order)
+sobolmatrix_A <<- sobol_matrices(N=SobolSims/6, params=factors_A, order=order)
+samples_C <- sobolmatrix_C
+samples_A <- sobolmatrix_A
+
+samples_C[, "lambda_C"] <- 
+  match.fun(get(paste0("lambda_C", "_q")))(samples_C[, paste0("lambda_C")],
+                                           mean = get(paste0("lambda_C", "_mean")),
+                                           sd = get(paste0("lambda_C", "_sd")))
+
+samples_C[, "rho_max_C"] <- 
+  match.fun(get(paste0("rho_max_C", "_q")))(samples_C[, paste0("rho_max_C")],
+                                            min = get(paste0("rho_max_C", "_min")),
+                                            max = get(paste0("rho_max_C", "_max")))
+
+samples_C[, "A_C"] <- 
+  match.fun(get(paste0("A_C", "_q")))(samples_C[, paste0("A_C")],
+                                      min = get(paste0("A_C", "_min")),
+                                      max = get(paste0("A_C", "_max")),
+                                      mode = get(paste0("A_C", "_mode")))
+
+samples_C[, "kappa_C"] <- 
+  match.fun(get(paste0("kappa_C", "_q")))(samples_C[, paste0("kappa_C")],
+                                          min = get(paste0("kappa_C", "_min")),
+                                          max = get(paste0("kappa_C", "_max")))
+samples_A[, "lambda_A"] <-
+  match.fun(get(paste0("lambda_A", "_q")))(samples_A[, paste0("lambda_A")],
+                                           mean = get(paste0("lambda_A", "_mean")),
+                                           sd = get(paste0("lambda_A", "_sd")))
+
+samples_A[, "rho_max_A"] <-
+  match.fun(get(paste0("rho_max_A", "_q")))(samples_A[, paste0("rho_max_A")],
+                                            min = get(paste0("rho_max_A", "_min")),
+                                            max = get(paste0("rho_max_A", "_max")))
+
+samples_A[, "A_A"] <-
+  match.fun(get(paste0("A_A", "_q")))(samples_A[, paste0("A_A")],
+                                      shape = get(paste0("A_A", "_shape")),
+                                      scale = get(paste0("A_A", "_scale")))
+
+samples_A[, "kappa_A"] <-
+  match.fun(get(paste0("kappa_A", "_q")))(samples_A[, paste0("kappa_A")],
+                                          min = get(paste0("kappa_A", "_min")),
+                                          max = get(paste0("kappa_A", "_max")))
+
+rm(A_A_q, A_A_scale, A_A_shape)
+rm(A_C_max, A_C_min, A_C_mode, A_C_q)
+rm(kappa_A_max, kappa_A_min,kappa_A_q)
+rm(kappa_C_max,kappa_C_min,kappa_C_q)
+rm(lambda_A_mean,lambda_A_q,lambda_A_sd)
+rm(lambda_C_mean,lambda_C_q,lambda_C_sd)
+rm(rho_max_A_max,rho_max_A_min,rho_max_A_q)
+rm(rho_max_C_max,rho_max_C_min,rho_max_C_q)
+
+rm(sobolmatrix_A,sobolmatrix_C)
+
+lambda_C_med <<- median(samples_C[, "lambda_C"])
+lambda_A_med <<- median(samples_A[, "lambda_A"])
+rho_max_C_med <<- median(samples_C[, "rho_max_C"])
+rho_max_A_med <<- median(samples_A[, "rho_max_A"])
+kappa_C_med <<- median(samples_C[, "kappa_C"])
+kappa_A_med <<- median(samples_A[, "kappa_A"])
+A_C_med <<- median(samples_C[, "A_C"])
+A_A_med <<- median(samples_A[, "A_A"])
+
+lambda_A <<- lambda_A_med
+rho_max_A <<- rho_max_A_med
+kappa_A <<- kappa_A_med
+A_A <<- A_A_med
+
+lambda_C <- lambda_C_med
+rho_max_C <- rho_max_C_med
+kappa_C <- kappa_C_med
+A_C <- A_C_med
+
+
+rm(lambda_C_med,lambda_A_med,rho_max_A_med,rho_max_C_med,kappa_C_med,kappa_A_med,A_C_med,A_A_med)
+
+```
+
+```{r - Pars}
+
+  prop_find <<- 0.1 #medium prop find
+  livestocktotal <<- 500
+  delta_t <<- 1 # In days, the time step
+  N_ponds <<- 1 # How many ponds in each cell - not ever changed N_ponds from 1
+  reduction_C <<- 0.5 # Based on Figure 8 in Reisen, W. K., Fang, Y., & Martinez, V. M. (2006). Effects of temperature on the transmission of west nile virus by Culex tarsalis (Diptera: Culicidae). Journal of medical entomology, 43(2), 309–17. Retrieved from http://www.ncbi.nlm.nih.gov/pubmed/16619616
+  reduction_A <<- 0.58 # Based on Figure 8 in Reisen, W. K., Fang, Y., & Martinez, V. M. (2006). Effects of temperature on the transmission of west nile virus by Culex tarsalis (Diptera: Culicidae). Journal of medical entomology, 43(2), 309–17. Retrieved from http://www.ncbi.nlm.nih.gov/pubmed/16619616
+  b_L1 <<- 1/(5*365) # birth rate for livestock
+  mu_L1 <<- 1/(5*365) # death rate for livestock
+  q_divided <<- 1E11 # parameter for the impact of the livestock on vector fecundity and gonotrophic cycles
+  q_A <<- 0.007 # probability of transovarial transmission
+  epsilon_L1 <<- 2/7# input by Sophie 1/2 - should it be 2/7?
+  gamma_L1 <<- 1/30 # input by Sophie 1/3     - should it be 30?
+  t_dep <<- 0.229 # average time for egg deposition = 0.229 days in lab ref(8) GL2018 supp
+  
+  N_L1 <- livestocktotal
+  
+  Pars_RVF <- c(rho_max_C,
+                  q_A, 
+                  rho_max_A,
+                  b_L1, 
+                  mu_L1, 
+                  epsilon_L1, 
+                  gamma_L1, 
+                  q_divided, 
+                  as.numeric(N_L1), 
+                  prop_find,
+                  livestocktotal
+                  )
+
+```
+
+```{r - Biting Rate}
+#Biting Rate - dependent on temperature (not water)
+
+# temperature <<- 25 + 273.16 # constant temperature - start mid = 25 degrees C
+# waterbody <<- 17500 # constant water body area -start  mid = 17,500
+
+# biting_rate(temperature)
+
+# Define the temperature values
+temperatures <- c(21, 25, 29)
+
+# Example list of variables
+variables_list <- list(
+  "a_Culex",
+  "a_Aedes",
+  "d_a_Culex_d_temp",
+  "d_a_Aedes_d_temp"
+)
+
+# Initialize a data table to store results
+biting_results <- data.table(
+  variable = character(),
+  temperature = numeric(),
+  biting_rate = numeric()
+)
+
+# Iterate through the temperature values
+for (temp in temperatures) {
+  # Convert temperature to Kelvin
+  temperature_kelvin <- temp + 273.16
+
+  # Calculate biting rate
+  rate <- biting_rate(temperature_kelvin)
+
+  # Append the results to the data table
+  biting_results <- rbind(biting_results, data.table(variable = variables_list, temperature = temp, biting_rate = rate))
+}
+
+
+# Ensure the 'variable' column is a character vector
+results[, variable := unlist(variable)]
+
+# Create the plot
+ggplot(results, aes(x = temperature, y = biting_rate, color = variable)) +
+    geom_line(linewidth = 1) +  # Line plot
+    geom_point(size = 2) +      # Add points for clarity
+    labs(
+        x = "Temperature (°C)",
+        y = "Biting Rate",
+        color = "Variable"
+    ) +
+    theme_minimal() +  # Use a clean theme
+    theme(
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.title = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10)
+    )
+
+```
+
+```{r - Development Rate}
+#Biting Rate - dependent on temperature (not water)
+
+temperatures <- c(13,17,21, 25, 29,33)
+
+# Define the function to calculate development rates
+calculate_dev_rates <- function(temperatures, stages_data) {
+  # Initialize a data table to store results
+  results <- data.table(
+    stage = character(),
+    temperature = numeric(),
+    dev_rate = numeric()
+  )
+  
+  # Iterate through the temperature values
+  for (temp in temperatures) {
+    # Convert temperature to Kelvin
+    temperature_kelvin <- temp + 273.16
+    
+    # Iterate through each stage
+    for (stage_name in names(stages_data)) {
+      # Extract the parameters for the current stage
+      params <- stages_data[[stage_name]]
+      
+      # Calculate the development rate using the Schoolfield function
+      rate <- Schoolfield(temperature_kelvin, params)
+      
+      # Append the results to the data table
+      results <- rbind(results, data.table(
+        stage = stage_name,
+        temperature = temp,
+        dev_rate = rate
+      ))
+    }
+  }
+  
+  return(results)
+}
+
+# Define the stages and their parameters
+stages_data_culex <- list(
+  Culex_Embryogenesis = c(1.23439, 27534.92, 301.00, 37071.82),
+  Culex_Larval_development = c(0.21554, 24689.00, 301.82, 37270.21),
+  Culex_Pupal_development = c(0.55490, 15648.63, 306.60, 43983.41)
+  # Culex_total = c(0.21945, 28049.98, 298.60, 35362.18)
+)
+
+# Define the stages and their parameters
+stages_data_aedes <- list(
+  Aedes_Embryogenesis = c(0.68007, 28033.83, 304.33, 72404.07),
+  Aedes_Larval_development = c(0.20429, 36072.78, 301.56, 45543.49),
+  Aedes_Pupal_development = c(0.74423, 19246.42, 302.68, 5954.35)
+  # Aedes_1st_Gonotrophic_cycle = c(0.00898 * 24, 15725.23, 447.17, 1756481),
+  # Aedes_total = c(0.15460, 33255.57, 301.67, 50543.49)
+)
+
+
+dev_results_culex <- calculate_dev_rates(temperatures, stages_data_culex)
+dev_results_culex <- dev_results_culex %>%
+  mutate(stage = gsub("_", " ", stage))
+
+dev_results_aedes <- calculate_dev_rates(temperatures, stages_data_aedes)
+dev_results_aedes <- dev_results_aedes %>%
+  mutate(stage = gsub("_", " ", stage))
+```
+
+```{r - Development Rate - Plots}
+# Create the plot for Culex
+culex_dev_plot <- ggplot(dev_results_culex, aes(x = temperature, y = dev_rate, color = stage)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    # title = "Development Rates for Culex",
+    x = "Temperature (°C)",
+    y = "Development Rate",
+    color = "Stage"
+  ) +
+  scale_color_viridis_d(
+    # values = c("blue", "green", "purple", "orange", "brown"),
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    ) +
+  scale_x_continuous(breaks = unique(dev_results_culex$temperature)) +  # Set x-axis ticks
+  theme_minimal()
+
+culex_dev_plot
+
+# Create the plot for Aedes
+aedes_dev_plot <- ggplot(dev_results_aedes, aes(x = temperature, y = dev_rate, color = stage)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    # title = "Development Rates for Aedes",
+    x = "Temperature (°C)",
+    y = "Development Rate",
+    color = "Stage"
+  ) +
+  scale_color_viridis_d(
+    # values = c("blue", "green", "purple", "orange", "brown"),
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    ) +
+  scale_x_continuous(breaks = unique(dev_results_culex$temperature)) +  # Set x-axis ticks
+  theme_minimal()
+
+aedes_dev_plot
+```
+
+```{r - Development Rate- Save Plots}
+file_Title_C <- "Culex_Dev"
+file_Title_A <- "Aedes_Dev"
+
+ggsave(plot = culex_dev_plot, file = paste0("Output/", file_Title_C, ".png"),
+       width = 6, height = 2)
+ggsave(plot = culex_dev_plot, file = paste0("Output/", file_Title_C, ".pdf"),
+       width = 6, height = 2, device = pdf)
+
+ggsave(plot = aedes_dev_plot, file = paste0("Output/", file_Title_A, ".png"),
+       width = 6, height = 2)
+ggsave(plot = aedes_dev_plot, file = paste0("Output/", file_Title_A, ".pdf"),
+       width = 6, height = 2, device = pdf)
+```
+
+
+```{r - Mortality Rate}
+
+# Define the temperature values
+temperatures <- c(13,17,21, 25, 29,33)
+
+# Example list of variables
+variables_list <- list("mu_C_O", "mu_C_L", "mu_C_P", "mu_C_E", "mu_C", "mu_A_Oi", "mu_A_Om", "mu_A_L", "mu_A_P", "mu_A_E", "mu_A")
+
+# Initialize a data table to store results
+mortality_results <- data.table(
+  variable = character(),
+  temperature = numeric(),
+  mortality_rate = numeric()
+)
+
+# Iterate through the temperature values
+for (temp in temperatures) {
+  # Convert temperature to Kelvin
+  temperature_kelvin <- temp + 273.16
+
+  # Calculate biting rate
+  rate <- mortality(temperature_kelvin)
+
+  # Append the results to the data table
+  mortality_results <- rbind(mortality_results, data.table(variable = variables_list, temperature = temp, mortality_rate = rate))
+}
+mortality_results[, variable := unlist(variable)]
+
+
+# Define the variable groups
+group_1 <- c("mu_C_O", "mu_C_L", "mu_C_P", "mu_C_E", "mu_C")
+group_2 <- c("mu_A_Oi", "mu_A_Om", "mu_A_L", "mu_A_P", "mu_A_E", "mu_A")
+
+# Filter rows based on the 'variable' column
+culex_mortality <- mortality_results %>%
+  filter(variable %in% group_1)
+
+aedes_mortality <- mortality_results %>%
+  filter(variable %in% group_2)
+
+# Convert the 'variable' column to a factor with the desired order
+culex_mortality <- culex_mortality %>%
+  mutate(variable = factor(variable, levels = group_1))
+
+aedes_mortality <- aedes_mortality %>%
+  mutate(variable = factor(variable, levels = group_2))
+
+```
+
+```{r - Mortality Rate - Plots}
+
+# Create the plot
+culex_mort_plot <- ggplot(culex_mortality, aes(x = temperature, y = mortality_rate, color = variable)) +
+    geom_line(linewidth = 1) +  # Line plot
+    geom_point(size = 2) +      # Add points for clarity
+    labs(
+        x = "Temperature (°C)",
+        y = "Mortality Rate",
+        color = "Variable"
+    ) +
+    theme_minimal() +  # Use a clean theme
+  scale_color_viridis_d(
+    # values = c("blue", "green", "purple", "orange", "brown"),
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    labels = c("Eggs", 
+               "Larvae",
+               "Pupae",
+               "Emergence of Adult",
+               "Adult"
+               )) +
+  scale_x_continuous(breaks = unique(culex_mortality$temperature)) +  # Set x-axis ticks
+    theme(
+        # plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8)
+    )
+culex_mort_plot
+
+# Create the plot
+aedes_mort_plot <- ggplot(aedes_mortality, aes(x = temperature, y = mortality_rate, color = variable)) +
+    geom_line(linewidth = 1) +  # Line plot
+    geom_point(size = 2) +      # Add points for clarity
+    labs(
+        x = "Temperature (°C)",
+        y = "Mortality Rate",
+        color = "Variable"
+    ) +
+    theme_minimal() +  # Use a clean theme
+  scale_color_viridis_d(
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    # values = c("red", "blue", "green", "purple", "orange", "brown"),
+    labels = c("Immature Eggs",
+               "Mature Eggs", 
+               "Larvae",
+               "Pupae",
+               "Emergence of Adult",
+               "Adult"
+               )) +
+  scale_x_continuous(breaks = unique(aedes_mortality$temperature)) +  # Set x-axis ticks
+    theme(
+        # plot.margin = margin(t = 20, r = 10, b = 10, l = 10),
+        # plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.title = element_text(size = 10),
+        legend.title = element_text(size = 8, margin = margin(t=10)),
+        legend.text = element_text(size = 8)
+    )
+aedes_mort_plot
+
+```
+
+```{r - Mortality Rate - Save Plots}
+file_Title_C <- "Culex_Mort"
+file_Title_A <- "Aedes_Mort"
+
+ggsave(plot = culex_mort_plot, file = paste0("Output/", file_Title_C, ".png"),
+       width = 6, height = 2)
+ggsave(plot = culex_mort_plot, file = paste0("Output/", file_Title_C, ".pdf"),
+       width = 6, height = 2, device = pdf)
+
+ggsave(plot = aedes_mort_plot, file = paste0("Output/", file_Title_A, ".png"),
+       width = 6, height = 2)
+ggsave(plot = aedes_mort_plot, file = paste0("Output/", file_Title_A, ".pdf"),
+       width = 6, height = 2, device = pdf)
+```
+
+
+```{r - Oviposition Rates}
+
+source("Functions/ponds.R",chdir=TRUE) #- defined in chunk
+
+# Define the temperature values
+temperatures <- c(13,17,21, 25, 29,33)
+Water <- c(5000,10000, 17500, 25000,30000)
+
+time = 1
+
+
+# Define the S_p(t) function (Water is passed as input)
+S_p <- function(w) {
+  return(w) # S_p(t) is the Water variable
+}
+D_S_p_dt <- function(w) {
+  return(0)
+}
+
+# Initialize a data table to store results
+Culex_ovi_results <- data.table(
+  temperature = numeric(),
+  water = numeric(),
+  oviposition_rate = numeric(),
+  b_C = numeric(),
+  K_C = numeric()
+)
+
+# Nested for loop to calculate oviposition rate for all combinations
+for (temp in temperatures) {
+  for (water in Water) {
+    # Update S_p(t) with the current water value
+    Pars_RVF$S_p <- function(water) { return(water) }
+    
+    # Call the oviposition_rate_Culex function
+    rates <- oviposition_rate_Culex(temp, Pars_RVF)
+    
+    # Extract the results
+    oviposition_rate <- rates[[1]]
+    b_C <- rates[[2]]
+    K_C <- rates[[3]]
+    
+    # Append the results to the data table
+    Culex_ovi_results <- rbind(Culex_ovi_results, data.table(
+      temperature = temp,
+      water = water,
+      oviposition_rate = oviposition_rate,
+      b_C = b_C,
+      K_C = K_C
+    ))
+  }
+}
+
+# Initialize a data table to store results
+Aedes_ovi_results <- data.table(
+  temperature = numeric(),
+  water = numeric(),
+  oviposition_rate = numeric(),
+  b_A = numeric(),
+  K_A = numeric(),
+  tau_A = numeric()
+)
+
+# Nested for loop to calculate oviposition rate for all combinations
+for (temp in temperatures) {
+  for (water in Water) {
+    # Update S_p(t) with the current water value
+    Pars_RVF$S_p <- function(water) { return(water) }
+    
+    # Call the oviposition_rate_Culex function
+    rates <- oviposition_rate_Aedes(temp, Pars_RVF)
+    
+    # Extract the results
+    oviposition_rate <- rates[[1]]
+    b_A <- rates[[2]]
+    K_A <- rates[[3]]
+    tau_A <- rates[[4]]
+    
+    # Append the results to the data table
+    Aedes_ovi_results <- rbind(Aedes_ovi_results, data.table(
+      temperature = temp,
+      water = water,
+      oviposition_rate = oviposition_rate,
+      b_A = b_A,
+      K_A = K_A,
+      tau_A = tau_A
+    ))
+  }
+}
+```
+
+```{r - Oviposition Rate - Plots}
+
+# Create a scatter plot with color representing oviposition_rate
+culex_ovi_plot <- ggplot(Culex_ovi_results, aes(x = temperature, y = water, color = oviposition_rate)) +
+  geom_point(size = 4) +
+  scale_color_viridis_c(
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    name = "Oviposition Rate"
+  ) +
+  labs(
+    # title = "Oviposition Rate by Temperature and Water",
+    x = "Temperature (°C)",
+    y = expression("Water" ~ (m^2))
+  ) +
+    scale_x_continuous(breaks = unique(Culex_ovi_results$temperature)) +  # Set x-axis ticks
+  scale_y_continuous(breaks = unique(Culex_ovi_results$water)) +        # Set y-axis ticks
+  guides(color = guide_colorbar()) +  # Explicitly add the color bar
+  theme_minimal()+
+  theme(
+    legend.position = "right",  # Ensure the legend is on the right
+    axis.title = element_text(size = 10),
+    legend.title = element_text(size = 8),  # Adjust legend title size
+    legend.text = element_text(size = 8)    # Adjust legend text size
+  )
+
+culex_ovi_plot
+
+# Create a scatter plot with color representing oviposition_rate
+aedes_ovi_plot <- ggplot(Aedes_ovi_results, aes(x = temperature, y = water, color = oviposition_rate)) +
+  geom_point(size = 4) +
+  scale_color_viridis_c(
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    name = "Oviposition Rate"
+  ) +
+  labs(
+    # title = "Oviposition Rate by Temperature and Water",
+    x = "Temperature (°C)",
+    y = expression("Water" ~ (m^2))
+  ) +
+    scale_x_continuous(breaks = unique(Aedes_ovi_results$temperature)) +  # Set x-axis ticks
+  scale_y_continuous(breaks = unique(Aedes_ovi_results$water)) +        # Set y-axis ticks
+  guides(color = guide_colorbar()) +  # Explicitly add the color bar
+  theme_minimal()+
+  theme(
+    legend.position = "right",  # Ensure the legend is on the right
+    axis.title = element_text(size = 10),
+    legend.title = element_text(size = 8),  # Adjust legend title size
+    legend.text = element_text(size = 8)    # Adjust legend text size
+  )
+
+
+
+```
+
+```{r - Oviposition Rate - Save Plots }
+
+file_Title_C <- "Culex_oviposition"
+file_Title_A <- "Aedes_oviposition"
+
+ggsave(plot = culex_ovi_plot, file = paste0("Output/", file_Title_C, ".png"),
+       width = 6, height = 2)
+ggsave(plot = culex_ovi_plot, file = paste0("Output/", file_Title_C, ".pdf"),
+       width = 6, height = 2, device = pdf)
+
+ggsave(plot = aedes_ovi_plot, file = paste0("Output/", file_Title_A, ".png"),
+       width = 6, height = 2)
+ggsave(plot = aedes_ovi_plot, file = paste0("Output/", file_Title_A, ".pdf"),
+       width = 6, height = 2, device = pdf)
+
+```
+
+
+```{r - Oviposition Carrying Capacity - Plots}
+
+culex_ovi_plot2 <- ggplot(Culex_ovi_results, aes(x = temperature, y = water, color = K_C)) +
+  geom_point(size = 4) +
+  scale_color_viridis_c(
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    name = "Oviposition Rate"
+  ) +
+  labs(
+    # title = "Oviposition Rate by Temperature and Water",
+    x = "Temperature (°C)",
+    y = expression("Water" ~ (m^2))
+  ) +
+    scale_x_continuous(breaks = unique(Culex_ovi_results$temperature)) +  # Set x-axis ticks
+  scale_y_continuous(breaks = unique(Culex_ovi_results$water)) +        # Set y-axis ticks
+  guides(color = guide_colorbar()) +  # Explicitly add the color bar
+  theme_minimal()+
+  theme(
+    legend.position = "right",  # Ensure the legend is on the right
+    axis.title = element_text(size = 10),
+    legend.title = element_text(size = 8),  # Adjust legend title size
+    legend.text = element_text(size = 8)    # Adjust legend text size
+  )
+
+# culex_ovi_plot2
+
+aedes_ovi_plot2 <- ggplot(Aedes_ovi_results, aes(x = temperature, y = water, color = K_A)) +
+  geom_point(size = 4) +
+  scale_color_viridis_c(
+    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+    name = "Oviposition Rate"
+  ) +
+  labs(
+    # title = "Oviposition Rate by Temperature and Water",
+    x = "Temperature (°C)",
+    y = expression("Water" ~ (m^2))
+  ) +
+    scale_x_continuous(breaks = unique(Aedes_ovi_results$temperature)) +  # Set x-axis ticks
+  scale_y_continuous(breaks = unique(Aedes_ovi_results$water)) +        # Set y-axis ticks
+  guides(color = guide_colorbar()) +  # Explicitly add the color bar
+  theme_minimal()+
+  theme(
+    legend.position = "right",  # Ensure the legend is on the right
+    axis.title = element_text(size = 10),
+    legend.title = element_text(size = 8),  # Adjust legend title size
+    legend.text = element_text(size = 8)    # Adjust legend text size
+  )
+
+```
+
+
+```{r - Oviposition Carrying Capacity - Plots}
+
+file_Title_C <- "Culex_oviposition_carrying"
+file_Title_A <- "Aedes_oviposition-carrying"
+
+ggsave(plot = culex_ovi_plot2, file = paste0("Output/", file_Title_C, ".png"),
+       width = 6, height = 2)
+ggsave(plot = culex_ovi_plot2, file = paste0("Output/", file_Title_C, ".pdf"),
+       width = 6, height = 2, device = pdf)
+
+ggsave(plot = aedes_ovi_plot2, file = paste0("Output/", file_Title_A, ".png"),
+       width = 6, height = 2)
+ggsave(plot = aedes_ovi_plot2, file = paste0("Output/", file_Title_A, ".pdf"),
+       width = 6, height = 2, device = pdf)
+```
+

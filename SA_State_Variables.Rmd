@@ -1,0 +1,232 @@
+---
+title: "Sensitivity Analysis"
+author: "Sophie North and Jessica Furber"
+date: "22/03/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Sensitivity Analysis
+
+## Calculate State Variables
+
+Here we are carrying out a Sobol Sensitivity Analysis, the output of which will be a collection of Sobol indices representing how influential the parameters of interest are on the model output. 
+
+Initially the model will be limited to constant temperature, constant water body area and disease-free scenario, so we are purely looking at how the parameters affect the mosquito abundance and dynamics. 
+
+This code is used to calculate the state variables. The state variables are obtained by running 15 years (15*365 = 5475 days)
+
+Adjust the files SA_SingleSimulation_Culex and SA_SingleSimulation_Aedes to change the state variables to start at 0.
+
+The state variables were just 100 for the egg Culex compartment, and the immature eggs in the Aedes population. I ran this for 5475 days. Then I extracted the compartment sizes at the end of this 2000 day period with a view to input these as the state variables for the actual sensitivity analysis, meaning hopefully the population sizes would stabilise within a short time period.
+
+
+When calculating the state variables for the periodic case, the state variables are obtained by running  20,000 days (54 years)
+
+```{r rm library source, echo=FALSE}
+rm(list = ls())
+
+library(rstudioapi)
+library(deSolve)
+library(rootSolve)
+library(tidyverse)
+library(data.table)
+library(EnvStats)
+library(nimble)
+library(sensobol)
+
+
+```
+
+```{r set general parameters for constants, echo=TRUE}
+
+source("Single_System.R", chdir = TRUE)
+
+SobolSims <<- 9000 # needed to calculate Sobol matrices to find the median
+day_length <<- 5475 # initial conditions
+modeloutput <<- "allMozadultsmeanlast28days"
+what <<- "one" # one or SA
+
+constanttemp <<- 25 # constant temperature - start mid = 25 degrees C
+constantwb <<- 17500 # constant water body area -start  mid = 17,500
+```
+
+```{r set general parameters for periodic, echo=TRUE}
+
+source("Single_System_periodic.R", chdir = TRUE)
+
+SobolSims <<- 9000 # needed to calculate Sobol matrices to find the median
+day_length <<- 20000 # initial conditions
+modeloutput <<- "allMozadultsmeanlast28days"
+what <<- "one" # one or SA
+```
+
+```{r set constant parameters, echo=TRUE}
+livestocktotal <<- 500 
+cellarea <<- 1 
+prop_find <<- 0.1 # start mid = 10%
+```
+
+
+```{r - set up Sobol matrices and define medians}
+#lambda_C = b_C in paper
+lambda_C_q <<- "qnorm"; lambda_C_mean <<- 149 ; lambda_C_sd <<- 16.18
+#lambda_A = b_A in paper
+lambda_A_q <<- "qnorm"; lambda_A_mean <<- 55 ; lambda_A_sd <<- 2.80
+#rho_max_C
+rho_max_C_q <<- "qunif"; rho_max_C_min <<- 500000 ; rho_max_C_max <<- 20000000
+#rho_max_A
+rho_max_A_q <<- "qunif"; rho_max_A_min <<- 20000 ; rho_max_A_max <<- 1000000
+#A_C
+A_C_q <<- "qtri"; A_C_min <<- 196000 ; A_C_max <<- 15904000 ; A_C_mode <<- 9621000 
+#A_A
+A_A_q <<- "qgamma"; A_A_shape <<- 2.5; A_A_scale <<- 10000
+#kappa_C 
+kappa_C_q <<- "qunif"; kappa_C_min <<- 0.001 ; kappa_C_max <<- 0.999
+#kappa_A
+kappa_A_q <<- "qunif"; kappa_A_min <<- 0.001 ; kappa_A_max <<- 0.999
+
+
+
+factors_C <<- c("lambda_C", 
+                "rho_max_C",
+                "A_C", 
+                "kappa_C")
+
+factors_A <<- c("lambda_A", 
+                "rho_max_A",
+                "A_A", 
+                "kappa_A")
+
+order <- "first"
+sobolmatrix_C <<- sobol_matrices(N=SobolSims/6, params=factors_C, order=order)
+sobolmatrix_A <<- sobol_matrices(N=SobolSims/6, params=factors_A, order=order)
+samples_C <- sobolmatrix_C
+samples_A <- sobolmatrix_A
+
+samples_C[, "lambda_C"] <- 
+  match.fun(get(paste0("lambda_C", "_q")))(samples_C[, paste0("lambda_C")],
+                                           mean = get(paste0("lambda_C", "_mean")),
+                                           sd = get(paste0("lambda_C", "_sd")))
+
+samples_C[, "rho_max_C"] <- 
+  match.fun(get(paste0("rho_max_C", "_q")))(samples_C[, paste0("rho_max_C")],
+                                            min = get(paste0("rho_max_C", "_min")),
+                                            max = get(paste0("rho_max_C", "_max")))
+
+samples_C[, "A_C"] <- 
+  match.fun(get(paste0("A_C", "_q")))(samples_C[, paste0("A_C")],
+                                      min = get(paste0("A_C", "_min")),
+                                      max = get(paste0("A_C", "_max")),
+                                      mode = get(paste0("A_C", "_mode")))
+
+samples_C[, "kappa_C"] <- 
+  match.fun(get(paste0("kappa_C", "_q")))(samples_C[, paste0("kappa_C")],
+                                          min = get(paste0("kappa_C", "_min")),
+                                          max = get(paste0("kappa_C", "_max")))
+samples_A[, "lambda_A"] <-
+  match.fun(get(paste0("lambda_A", "_q")))(samples_A[, paste0("lambda_A")],
+                                           mean = get(paste0("lambda_A", "_mean")),
+                                           sd = get(paste0("lambda_A", "_sd")))
+
+samples_A[, "rho_max_A"] <-
+  match.fun(get(paste0("rho_max_A", "_q")))(samples_A[, paste0("rho_max_A")],
+                                            min = get(paste0("rho_max_A", "_min")),
+                                            max = get(paste0("rho_max_A", "_max")))
+
+samples_A[, "A_A"] <-
+  match.fun(get(paste0("A_A", "_q")))(samples_A[, paste0("A_A")],
+                                      shape = get(paste0("A_A", "_shape")),
+                                      scale = get(paste0("A_A", "_scale")))
+
+samples_A[, "kappa_A"] <-
+  match.fun(get(paste0("kappa_A", "_q")))(samples_A[, paste0("kappa_A")],
+                                          min = get(paste0("kappa_A", "_min")),
+                                          max = get(paste0("kappa_A", "_max")))
+
+rm(A_A_q, A_A_scale, A_A_shape)
+rm(A_C_max, A_C_min, A_C_mode, A_C_q)
+rm(kappa_A_max, kappa_A_min,kappa_A_q)
+rm(kappa_C_max,kappa_C_min,kappa_C_q)
+rm(lambda_A_mean,lambda_A_q,lambda_A_sd)
+rm(lambda_C_mean,lambda_C_q,lambda_C_sd)
+rm(rho_max_A_max,rho_max_A_min,rho_max_A_q)
+rm(rho_max_C_max,rho_max_C_min,rho_max_C_q)
+
+rm(sobolmatrix_A,sobolmatrix_C)
+
+
+lambda_C_med <<- median(samples_C[, "lambda_C"])
+lambda_A_med <<- median(samples_A[, "lambda_A"])
+rho_max_C_med <<- median(samples_C[, "rho_max_C"])
+rho_max_A_med <<- median(samples_A[, "rho_max_A"])
+kappa_C_med <<- median(samples_C[, "kappa_C"])
+kappa_A_med <<- median(samples_A[, "kappa_A"])
+A_C_med <<- median(samples_C[, "A_C"])
+A_A_med <<- median(samples_A[, "A_A"])
+
+lambda_A <<- lambda_A_med
+rho_max_A <<- rho_max_A_med
+kappa_A <<- kappa_A_med
+A_A <<- A_A_med
+
+# these values used in the paper
+# lambda_A <<- 100
+# rho_max_A <<- 1.5E5
+# kappa_A <<- 0.001
+# A_A <<- 1E6
+
+lambda_C <- lambda_C_med
+rho_max_C <- rho_max_C_med
+kappa_C <- kappa_C_med
+A_C <- A_C_med
+
+# these values used in the paper
+# lambda_C <- 200
+# rho_max_C <- 1.5E5
+# kappa_C <- 0.001
+# A_C <- 1E6
+
+rm(lambda_C_med,lambda_A_med,rho_max_A_med,rho_max_C_med,kappa_C_med,kappa_A_med,A_C_med,A_A_med)
+
+```
+
+We model each mosquito separately, so estimate population separately. A csv file is automatically saved.
+
+```{r single sim for Culex gauging numbers and finding state variables, eval = FALSE}
+singleSim_OnlyCulex(lambda_C,
+               rho_max_C,
+               A_C,
+               kappa_C )
+```
+
+```{r single sim for Aedes gauging numbers and finding state variables, eval = FALSE}
+singleSim_OnlyAedes(lambda_A,
+               rho_max_A,
+               A_A,
+               kappa_A )
+```
+
+
+To view the numbers at time 5475 for each population in R:(to view at 20,000, change value)
+
+```{r import state variable table}
+culex_state_variables <- read.csv("Output/SobolIndices/Culex/State_Variables/Culex_SingleSim.csv")
+culex_state_variables <- culex_state_variables %>%
+  dplyr::filter(Time == 5475)
+culex_state_variables <- culex_state_variables %>%
+  dplyr::select(-1)
+head(culex_state_variables)
+```
+
+```{r import state variable table}
+aedes_state_variables <- read.csv("Output/SobolIndices/Aedes/State_Variables/Aedes_SingleSim.csv")
+aedes_state_variables <- aedes_state_variables %>%
+  dplyr::filter(Time == 2000)
+aedes_state_variables <- aedes_state_variables %>%
+  dplyr::select(-1)
+head(aedes_state_variables)
+```
