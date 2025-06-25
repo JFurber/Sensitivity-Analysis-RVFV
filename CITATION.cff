@@ -1,11 +1,11 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 authors:
-- family-names: "North"
-  given-names: "Sophie"
 - family-names: "Furber"
   given-names: "Jessica Rachel"
   orcid: "https://orcid.org/0009-0008-4003-7920"
+- family-names: "North"
+  given-names: "Sophie"
 - family-names: "Lo Iacono"
   given-names: "Giovanni"
   orcid: "https://orcid.org/0000-0002-6150-2843"
