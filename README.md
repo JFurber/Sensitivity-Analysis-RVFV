@@ -7,7 +7,7 @@ The four parameters considered are:
 - $\mathcal{A}$: Typical area scanned by mosquitoes flyers looking for oviposition sites.
 - $\kappa$: The proportion of the water body area/soil that female adult mosquitoes, lays eggs on.
 - $b$: The number of eggs laid per batch by female adults. 
-- $\rho^{\max}$: The maximum density of eggs in the water body for mosquitoes to lay eggs.
+- $\rho$: The maximum density of eggs in the water body for mosquitoes to lay eggs.
 
 Further, we firstly consider constant values for the air temperature, water body areas and livestock numbers (values that are brought into the model using empirical data). Though we do vary the values of air temperature, water body areas, and a parameter in the model denoted as $p_f$ (detection probability) for a low, medium and high value to compare the effects on the four sensitive parameters we are investigating. Secondly, we consider periodic functions for the air temperature and water body areas.
 
