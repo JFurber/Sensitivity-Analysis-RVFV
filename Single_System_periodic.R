@@ -25,7 +25,7 @@ singleSim_OnlyCulex <- function(lambda_C, rho_max_C,
   A_S_p <<- (1-alpha)*C_S_p  #initial cond 0.2% of the mean  #  S_p_0<-C_S_p-A_S_p   this represents the size of the ponds at time 0 and time T=365 days.
   
   omega_S_p <<- 2*3.14/(365)
-  phi_S_p <<- acos(-1)
+  phi_S_p <<- acos(-1) #both acos(-1) = in phase
   pond_cond <- "periodic"
   
   # temperature
@@ -72,21 +72,21 @@ singleSim_OnlyCulex <- function(lambda_C, rho_max_C,
     
 
     # State Variables:
-    State_RVF <- c(O_c = 11297762491,                  
-                   L_c = 126292524319,                 
-                   P_c = 34198939626,                  
-                   A1_c = 14870921074,                 
-                   F_c = 18767951260,                
-                   A2_c = 298125932
-)
+    # State_RVF <- c(O_c = 11297739757,
+    #                L_c = 126292257731,
+    #                P_c = 34198866542,
+    #                A1_c = 14870888861,
+    #                F_c = 18767909245,
+    #                A2_c = 298125258
+# )
 
     # # # Used to obtain state variables:
-    # State_RVF <- c(O_c = 100,                  
-    #                L_c = 0,                 
-    #                P_c = 0,                  
-    #                A1_c = 0,               
-    #                F_c = 0,                 
-    #                A2_c = 0)
+    State_RVF <- c(O_c = 100,
+                   L_c = 0,
+                   P_c = 0,
+                   A1_c = 0,
+                   F_c = 0,
+                   A2_c = 0)
 
     N_L1 <- livestocktotal
     
@@ -303,22 +303,22 @@ singleSim_OnlyAedes <- function(lambda_A, rho_max_A,
     source("Functions/temperature.R", chdir = TRUE)
     
     # State Variables
-    State_RVF <- c(O_a1 = 1022032145,                  
-                   O_a2 = 51466342989,                  
-                   L_a = 407304730,                 
-                   P_a = 121631045,               
-                   A1_a = 58408894,                  
-                   F_a = 294784195,                
-                   A2_a = 6772800)
+    # State_RVF <- c(O_a1 = 1022032145,                  
+    #                O_a2 = 51466342989,                  
+    #                L_a = 407304730,                 
+    #                P_a = 121631045,               
+    #                A1_a = 58408894,                  
+    #                F_a = 294784195,                
+    #                A2_a = 6772800)
     
     # # Used to obtain state variables:
-    # State_RVF <- c(O_a1 = 100,                
-    #                O_a2 = 0,               
-    #                L_a = 0,                 
-    #                P_a = 0,                 
-    #                A1_a = 0,               
-    #                F_a = 0,               
-    #                A2_a = 0)
+    State_RVF <- c(O_a1 = 100,
+                   O_a2 = 0,
+                   L_a = 0,
+                   P_a = 0,
+                   A1_a = 0,
+                   F_a = 0,
+                   A2_a = 0)
 
     N_L1 <- livestocktotal
     

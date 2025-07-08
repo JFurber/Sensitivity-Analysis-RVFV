@@ -21,7 +21,7 @@ source("Single_System_periodic.R", chdir = TRUE)
 
 ```{r - parameters that can change}
 SobolSims <<- 9000
-day_length <<- 365 * 2
+day_length <<- 365 * 11
 modeloutput <<- "allMozadultsmeanlast28days"
 what <<- "SA" # one or SA
 
@@ -33,13 +33,13 @@ prop_find <<- 0.1 # start mid = 10%
 
 ```{r - set up Sobol matrices}
 #lambda_C = b_C in paper
-lambda_C_q <<- "qnorm"; lambda_C_mean <<- 149 ; lambda_C_sd <<- 16.18
+lambda_C_q <<- "qnorm"; lambda_C_mean <<- 149 ; lambda_C_sd <<- 16.2
 #lambda_A = b_A in paper
 lambda_A_q <<- "qnorm"; lambda_A_mean <<- 55 ; lambda_A_sd <<- 2.80
 #rho_max_C
 rho_max_C_q <<- "qunif"; rho_max_C_min <<- 500000 ; rho_max_C_max <<- 20000000
 #rho_max_A
-rho_max_A_q <<- "qunif"; rho_max_A_min <<- 20000 ; rho_max_A_max <<- 1000000
+rho_max_A_q <<- "qunif"; rho_max_A_min <<- 12000 ; rho_max_A_max <<- 1000000
 #A_C
 A_C_q <<- "qtri"; A_C_min <<- 196000 ; A_C_max <<- 15904000 ; A_C_mode <<- 9621000 
 #A_A
@@ -48,7 +48,6 @@ A_A_q <<- "qgamma"; A_A_shape <<- 2.5; A_A_scale <<- 10000
 kappa_C_q <<- "qunif"; kappa_C_min <<- 0.001 ; kappa_C_max <<- 0.999
 #kappa_A
 kappa_A_q <<- "qunif"; kappa_A_min <<- 0.001 ; kappa_A_max <<- 0.999
-
 
 
 factors_C <<- c("lambda_C", 
@@ -182,9 +181,9 @@ indexPlot <- ggplot(data = plottableIndices, aes(x = parameters, y = original, c
   scale_x_discrete(
     labels = c(
       expression(italic(A[C])), 
-      expression(italic(kappa[C])), 
+      expression(italic(kappa^{"Culex"})), 
       expression(italic(b[C])), 
-      expression(italic(rho[C]^max))
+      expression(italic(rho[C]))
     )
   ) +
   scale_color_viridis_d(
@@ -211,9 +210,9 @@ if (moz == "Ap"){
   scale_x_discrete(
     labels = c(
       expression(italic(A[A])), 
-      expression(italic(kappa[A])), 
+      expression(italic(kappa^{"Aedes"})), 
       expression(italic(b[A])), 
-      expression(italic(rho[A]^max))
+      expression(italic(rho[A]))
     )
   ) +
   scale_color_viridis_d(
@@ -235,6 +234,7 @@ ggsave(plot = indexPlot, file = paste0("Output/Periodic/", file_Title, "indices.
 ggsave(plot = indexPlot, file = paste0("Output/Periodic/", file_Title, "indices.pdf"),
        width = 6, height = 2, device = pdf)
 write.csv(plottableIndices, file = paste0("Output/Periodic/", file_Title, "indices.csv"))
+save.image(file = paste0("Output/Periodic/", file_Title, ".RData"))
 
 ```
 

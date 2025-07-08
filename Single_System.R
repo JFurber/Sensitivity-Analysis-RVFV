@@ -71,20 +71,20 @@ singleSim_OnlyCulex <- function(lambda_C, rho_max_C,
     # source("Functions/temperature.R", chdir = TRUE) 
     
     # # State Variables:
-        State_RVF <- c(O_c = 20814568773,               
-                       L_c = 217139061389,                 
-                       P_c = 63312208372,               
-                       A1_c = 30712604419,               
-                       F_c = 50471097051,                
-                       A2_c = 632816632)
+        # State_RVF <- c(O_c = 20814563120,
+        #                L_c = 217139002419,
+        #                P_c = 63312191177,
+        #                A1_c = 30712596078,
+        #                F_c = 50471083343,
+        #                A2_c = 632816460)
 
-    # # Used to obtain state variables:
-    # State_RVF <- c(O_c = 100,                
-    #                L_c = 0,                
-    #                P_c = 0,                
-    #                A1_c = 0,              
-    #                F_c = 0,               
-    #                A2_c = 0)
+    # Used to obtain state variables:
+    State_RVF <- c(O_c = 100,
+                   L_c = 0,
+                   P_c = 0,
+                   A1_c = 0,
+                   F_c = 0,
+                   A2_c = 0)
     
     N_L1 <- livestocktotal
     
@@ -268,7 +268,7 @@ singleSim_OnlyAedes <- function(lambda_A, rho_max_A,
     # Temperature, Water Body Area (wbarea), Livestock Density - Set up
     
     database <- data.frame(daynum = 1:5000, tmean = constanttemp, wbarea1 = constantwb,
-                           cellarea = cellarea, livestockda = livestocktotal)
+                           cellarea = cellarea, livestockda = livestocktotal) # this is not important in this coded/utilized
     
     # propsearcharea represents the fraction of the total cell area that mosquitoes are likely to search in - they will search the whole cell
     database$propsearcharea <- 1
@@ -293,22 +293,22 @@ singleSim_OnlyAedes <- function(lambda_A, rho_max_A,
     # source("Functions/temperature.R", chdir = TRUE) 
 
     # State Variables - calculated using only Aedes with desiccation =0 and delta = 1:
-    State_RVF <- c(O_a1 = 71705473459,               
-                   O_a2 = 0,                
-                   L_a = 66184375142,                
-                   P_a = 24079748927,                 
-                   A1_a = 12138302918,              
-                   F_a = 46274535663,               
-                   A2_a = 761290914)
+    # State_RVF <- c(O_a1 = 4380798686,
+    #                O_a2 = 0,
+    #                L_a = 15601261343,
+    #                P_a = 5676180447,
+    #                A1_a = 2861290378,
+    #                F_a = 1448833708,
+    #                A2_a = 9638652449)
     
-    # # Used to obtain state variables:
-    # State_RVF <- c(O_a1 = 100,                 
-    #                O_a2 = 0,              
-    #                L_a = 0,               
-    #                P_a = 0,                
-    #                A1_a = 0,                
-    #                F_a = 0,               
-    #                A2_a = 0)
+    # Used to obtain state variables:
+    State_RVF <- c(O_a1 = 100,
+                   O_a2 = 0,
+                   L_a = 0,
+                   P_a = 0,
+                   A1_a = 0,
+                   F_a = 0,
+                   A2_a = 0)
     
 
     N_L1 <- livestocktotal
@@ -373,17 +373,17 @@ singleSim_OnlyAedes <- function(lambda_A, rho_max_A,
                      "Flyers",                     
                      "Parous")       
     
-    toReturn <- data_output
+    toReturn <<- data_output
     
     toReturn$allMozadults <-rowSums(toReturn[, adults_cols])
     
     # if chosen "one", then the return plot will be the state variable plot and show the population. 
     if (what == "one") {
       facetPlot <- ggplot(data = facetPlotData, aes(x = Time, y = Value)) +
-        geom_line(linewidth = 0.8) + 
-        facet_wrap(~Compartment, scales = "free") + 
+        geom_line(linewidth = 0.8) +
+        facet_wrap(~Compartment, scales = "free") +
         theme_classic(base_size = 12) +
-        labs(x = "Time (days)", y = "Population") + 
+        labs(x = "Time (days)", y = "Population") +
         scale_y_continuous(
           expand = expansion(mult = c(0.1, 0.05)),  # Add 10% padding to the lower limit
           breaks = function(limits) {
@@ -402,7 +402,7 @@ singleSim_OnlyAedes <- function(lambda_A, rho_max_A,
           panel.grid.minor = element_blank(),        # Remove minor grid lines to avoid clutter
           panel.spacing = unit(0.5, "lines")           # Adjust spacing between facets
         )
-      
+
       facetPlot2 <- ggplot(data = facetPlotData, aes(x = Time, y = Value)) +
         geom_line(linewidth = 0.8) +
         facet_grid(~Compartment, scales = "fixed") +
@@ -422,21 +422,21 @@ singleSim_OnlyAedes <- function(lambda_A, rho_max_A,
           panel.spacing = unit(1, "lines")           # Adjust spacing between facets
         )
       facetPlot2
-      
+
       ggsave(plot = facetPlot,
              filename = paste0("Output/", "Aedes_SingleSim",  "_facetPlot.png"),
              width = 6, height = 4)
       ggsave(plot = facetPlot,
              filename = paste0("Output/", "Aedes_SingleSim",  "_facetPlot.pdf"),
              width = 6, height = 3,device=pdf)
-      
+
       ggsave(plot = facetPlot2,
              filename = paste0("Output/", "Aedes_SingleSim",  "_facetPlot2.png"),
              width = 6, height = 3)
       ggsave(plot = facetPlot2,
              filename = paste0("Output/", "Aedes_SingleSim",  "_facetPlot2.pdf"),
              width = 6, height = 2,device=pdf)
-      
+
       write.csv(data_output, file = paste0("Output/", "Aedes_SingleSim", ".csv"))
       
     }

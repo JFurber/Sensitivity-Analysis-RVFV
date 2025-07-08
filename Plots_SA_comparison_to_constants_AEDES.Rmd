@@ -78,9 +78,9 @@ plot_temperature <- ggplot(data = csv_imports_temp, aes(x = temperature, y = ori
                     scale_color_viridis_d(
                       option = "viridis", 
                      labels = c(expression(italic(A[A])), 
-                                expression(italic(kappa[A])), 
+                                expression(italic(kappa^{"Aedes"})), 
                                 expression(italic(b[A])), 
-                                expression(italic(rho[A]^max)))) +
+                                expression(italic(rho[A])))) +
                     scale_x_continuous(breaks = unique(csv_imports_temp$temperature)) +
                     theme_classic()+
                     theme(axis.title = element_text(size = 10),    # Axis labels
@@ -101,9 +101,9 @@ plot_water <- ggplot(data = csv_imports_water, aes(x = water, y = original, col 
                     scale_color_viridis_d(
                       option = "viridis", 
                      labels = c(expression(italic(A[A])), 
-                                expression(italic(kappa[A])), 
+                                expression(italic(kappa^{"Aedes"})), 
                                 expression(italic(b[A])), 
-                                expression(italic(rho[A]^max)))) +
+                                expression(italic(rho[A])))) +
                     scale_x_continuous(breaks = unique(csv_imports_water$water)) +
                     theme_classic()+
                     theme(axis.title = element_text(size = 10),    # Axis labels
@@ -124,9 +124,9 @@ plot_prop <- ggplot(data = csv_imports_prop, aes(x = prop, y = original, col = p
                     scale_color_viridis_d(
                       option = "viridis",
                      labels = c(expression(italic(A[A])), 
-                                expression(italic(kappa[A])), 
+                                expression(italic(kappa^{"Aedes"})), 
                                 expression(italic(b[A])), 
-                                expression(italic(rho[A]^max)))) +
+                                expression(italic(rho[A])))) +
                     scale_x_continuous(breaks = unique(csv_imports_prop$prop)) +
                     theme_classic()+
                     theme(axis.title = element_text(size = 10),    # Axis labels
@@ -140,19 +140,19 @@ plot_prop <- ggplot(data = csv_imports_prop, aes(x = prop, y = original, col = p
 Save them all and then move to the appropriate folder before doing the next parameter.
 
 ```{r save plot}
+# 
+# ggsave(plot_temperature, filename = "Output/SobolIndices/Aedes/Aedes_temperature.png",
+#        width = 6, height = 2)
+# ggsave(plot_temperature,
+#              filename = "Output/SobolIndices/Aedes/Aedes_temperature.pdf",
+#              width = 6, height = 2,device=pdf)
 
-ggsave(plot_temperature, filename = "Output/SobolIndices/Aedes/Aedes_temperature.png",
-       width = 6, height = 2)
-ggsave(plot_temperature,
-             filename = "Output/SobolIndices/Aedes/Aedes_temperature.pdf",
-             width = 6, height = 2,device=pdf)
-
-ggsave(plot_water, filename = "Output/SobolIndices/Aedes/Aedes_water.png",
-       width = 6, height = 2)
-ggsave(plot_water,
-             filename = "Output/SobolIndices/Aedes/Aedes_water.pdf",
-             width = 6, height = 2,device=pdf)
-
+# ggsave(plot_water, filename = "Output/SobolIndices/Aedes/Aedes_water.png",
+#        width = 6, height = 2)
+# ggsave(plot_water,
+#              filename = "Output/SobolIndices/Aedes/Aedes_water.pdf",
+#              width = 6, height = 2,device=pdf)
+# 
 ggsave(plot_prop, filename = "Output/SobolIndices/Aedes/Aedes_prop.png",
        width = 6, height = 2)
 ggsave(plot_prop,

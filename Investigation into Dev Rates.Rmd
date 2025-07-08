@@ -504,9 +504,44 @@ D_S_p_dt <- function(w) {
   return(0)
 }
 
+# # Initialize a data table to store results
+# Culex_ovi_results <- data.table(
+#   temperature = numeric(),
+#   water = numeric(),
+#   oviposition_rate = numeric(),
+#   b_C = numeric(),
+#   K_C = numeric()
+# )
+# 
+# # Nested for loop to calculate oviposition rate for all combinations
+# for (temp in temperatures) {
+#   for (water in Water) {
+#     # Update S_p(t) with the current water value
+#     Pars_RVF$S_p <- function(water) { return(water) }
+#     
+#     # Call the oviposition_rate_Culex function
+#     rates <- oviposition_rate_Culex(temp, Pars_RVF)
+#     
+#     # Extract the results
+#     oviposition_rate <- rates[[1]]
+#     b_C <- rates[[2]]
+#     K_C <- rates[[3]]
+#     
+#     # Append the results to the data table
+#     Culex_ovi_results <- rbind(Culex_ovi_results, data.table(
+#       temperature = temp,
+#       water = water,
+#       oviposition_rate = oviposition_rate,
+#       b_C = b_C,
+#       K_C = K_C
+#     ))
+#   }
+# }
+
+
 # Initialize a data table to store results
 Culex_ovi_results <- data.table(
-  temperature = numeric(),
+  # temperature = numeric(),
   water = numeric(),
   oviposition_rate = numeric(),
   b_C = numeric(),
@@ -514,13 +549,13 @@ Culex_ovi_results <- data.table(
 )
 
 # Nested for loop to calculate oviposition rate for all combinations
-for (temp in temperatures) {
+# for (temp in temperatures) {
   for (water in Water) {
     # Update S_p(t) with the current water value
     Pars_RVF$S_p <- function(water) { return(water) }
     
     # Call the oviposition_rate_Culex function
-    rates <- oviposition_rate_Culex(temp, Pars_RVF)
+    rates <- oviposition_rate_Culex(water, Pars_RVF)
     
     # Extract the results
     oviposition_rate <- rates[[1]]
@@ -529,18 +564,55 @@ for (temp in temperatures) {
     
     # Append the results to the data table
     Culex_ovi_results <- rbind(Culex_ovi_results, data.table(
-      temperature = temp,
+      # temperature = temp,
       water = water,
       oviposition_rate = oviposition_rate,
       b_C = b_C,
       K_C = K_C
     ))
   }
-}
+# }
+
+# # Initialize a data table to store results
+# Aedes_ovi_results <- data.table(
+#   temperature = numeric(),
+#   water = numeric(),
+#   oviposition_rate = numeric(),
+#   b_A = numeric(),
+#   K_A = numeric(),
+#   tau_A = numeric()
+# )
+# 
+# # Nested for loop to calculate oviposition rate for all combinations
+# for (temp in temperatures) {
+#   for (water in Water) {
+#     # Update S_p(t) with the current water value
+#     Pars_RVF$S_p <- function(water) { return(water) }
+#     
+#     # Call the oviposition_rate_Culex function
+#     rates <- oviposition_rate_Aedes(temp, Pars_RVF)
+#     
+#     # Extract the results
+#     oviposition_rate <- rates[[1]]
+#     b_A <- rates[[2]]
+#     K_A <- rates[[3]]
+#     tau_A <- rates[[4]]
+#     
+#     # Append the results to the data table
+#     Aedes_ovi_results <- rbind(Aedes_ovi_results, data.table(
+#       temperature = temp,
+#       water = water,
+#       oviposition_rate = oviposition_rate,
+#       b_A = b_A,
+#       K_A = K_A,
+#       tau_A = tau_A
+#     ))
+#   }
+# }
 
 # Initialize a data table to store results
 Aedes_ovi_results <- data.table(
-  temperature = numeric(),
+  # temperature = numeric(),
   water = numeric(),
   oviposition_rate = numeric(),
   b_A = numeric(),
@@ -549,13 +621,13 @@ Aedes_ovi_results <- data.table(
 )
 
 # Nested for loop to calculate oviposition rate for all combinations
-for (temp in temperatures) {
+# for (temp in temperatures) {
   for (water in Water) {
     # Update S_p(t) with the current water value
     Pars_RVF$S_p <- function(water) { return(water) }
     
     # Call the oviposition_rate_Culex function
-    rates <- oviposition_rate_Aedes(temp, Pars_RVF)
+    rates <- oviposition_rate_Aedes(water, Pars_RVF)
     
     # Extract the results
     oviposition_rate <- rates[[1]]
@@ -565,7 +637,7 @@ for (temp in temperatures) {
     
     # Append the results to the data table
     Aedes_ovi_results <- rbind(Aedes_ovi_results, data.table(
-      temperature = temp,
+      # temperature = temp,
       water = water,
       oviposition_rate = oviposition_rate,
       b_A = b_A,
@@ -573,59 +645,111 @@ for (temp in temperatures) {
       tau_A = tau_A
     ))
   }
-}
+# }
+
 ```
 
 ```{r - Oviposition Rate - Plots}
 
-# Create a scatter plot with color representing oviposition_rate
-culex_ovi_plot <- ggplot(Culex_ovi_results, aes(x = temperature, y = water, color = oviposition_rate)) +
-  geom_point(size = 4) +
-  scale_color_viridis_c(
-    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
-    name = "Oviposition Rate"
-  ) +
-  labs(
-    # title = "Oviposition Rate by Temperature and Water",
-    x = "Temperature (°C)",
-    y = expression("Water" ~ (m^2))
-  ) +
-    scale_x_continuous(breaks = unique(Culex_ovi_results$temperature)) +  # Set x-axis ticks
-  scale_y_continuous(breaks = unique(Culex_ovi_results$water)) +        # Set y-axis ticks
-  guides(color = guide_colorbar()) +  # Explicitly add the color bar
-  theme_minimal()+
-  theme(
-    legend.position = "right",  # Ensure the legend is on the right
-    axis.title = element_text(size = 10),
-    legend.title = element_text(size = 8),  # Adjust legend title size
-    legend.text = element_text(size = 8)    # Adjust legend text size
-  )
-
+# Create the plot
+culex_ovi_plot <- ggplot(Culex_ovi_results, aes(x = water, y = oviposition_rate)) +
+    geom_line(linewidth = 1) +  # Line plot
+    geom_point(size = 2) +      # Add points for clarity
+    labs(
+        x = expression("Water" ~ (m^2)),
+        y = "Oviposition Rate"
+    ) +
+    theme_minimal() +  # Use a clean theme
+  # scale_color_viridis_d(
+  #   # values = c("blue", "green", "purple", "orange", "brown"),
+  #   option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")) +
+  scale_x_continuous(breaks = unique(Culex_ovi_results$water)) +  # Set x-axis ticks
+    theme(
+        # plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8)
+    )
 culex_ovi_plot
 
-# Create a scatter plot with color representing oviposition_rate
-aedes_ovi_plot <- ggplot(Aedes_ovi_results, aes(x = temperature, y = water, color = oviposition_rate)) +
-  geom_point(size = 4) +
-  scale_color_viridis_c(
-    option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
-    name = "Oviposition Rate"
-  ) +
-  labs(
-    # title = "Oviposition Rate by Temperature and Water",
-    x = "Temperature (°C)",
-    y = expression("Water" ~ (m^2))
-  ) +
-    scale_x_continuous(breaks = unique(Aedes_ovi_results$temperature)) +  # Set x-axis ticks
-  scale_y_continuous(breaks = unique(Aedes_ovi_results$water)) +        # Set y-axis ticks
-  guides(color = guide_colorbar()) +  # Explicitly add the color bar
-  theme_minimal()+
-  theme(
-    legend.position = "right",  # Ensure the legend is on the right
-    axis.title = element_text(size = 10),
-    legend.title = element_text(size = 8),  # Adjust legend title size
-    legend.text = element_text(size = 8)    # Adjust legend text size
-  )
+# Create the plot
+aedes_ovi_plot <- ggplot(Aedes_ovi_results, aes(x = water, y = oviposition_rate)) +
+    geom_line(linewidth = 1) +  # Line plot
+    geom_point(size = 2) +      # Add points for clarity
+    labs(
+        x = expression("Water" ~ (m^2)),
+        y = "Oviposition Rate"
+    ) +
+    theme_minimal() +  # Use a clean theme
+  # scale_color_viridis_d(
+  #   option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+  #   # values = c("red", "blue", "green", "purple", "orange", "brown"),
+  #   labels = c("Immature Eggs",
+  #              "Mature Eggs", 
+  #              "Larvae",
+  #              "Pupae",
+  #              "Emergence of Adult",
+  #              "Adult"
+  #              )) +
+  scale_x_continuous(breaks = unique(Aedes_ovi_results$water)) +  # Set x-axis ticks
+    theme(
+        # plot.margin = margin(t = 20, r = 10, b = 10, l = 10),
+        # plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.title = element_text(size = 10),
+        legend.title = element_text(size = 8, margin = margin(t=10)),
+        legend.text = element_text(size = 8)
+    )
+aedes_ovi_plot
 
+
+# # Create a scatter plot with color representing oviposition_rate
+# culex_ovi_plot <- ggplot(Culex_ovi_results, aes(x = temperature, y = water, color = oviposition_rate)) +
+#   geom_point(size = 4) +
+#   scale_color_viridis_c(
+#     option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+#     name = "Oviposition Rate"
+#   ) +
+#   labs(
+#     # title = "Oviposition Rate by Temperature and Water",
+#     x = "Temperature (°C)",
+#     y = expression("Water" ~ (m^2))
+#   ) +
+#     scale_x_continuous(breaks = unique(Culex_ovi_results$temperature)) +  # Set x-axis ticks
+#   scale_y_continuous(breaks = unique(Culex_ovi_results$water)) +        # Set y-axis ticks
+#   guides(color = guide_colorbar()) +  # Explicitly add the color bar
+#   theme_minimal()+
+#   theme(
+#     legend.position = "right",  # Ensure the legend is on the right
+#     axis.title = element_text(size = 10),
+#     legend.title = element_text(size = 8),  # Adjust legend title size
+#     legend.text = element_text(size = 8)    # Adjust legend text size
+#   )
+# 
+# culex_ovi_plot
+# 
+# # Create a scatter plot with color representing oviposition_rate
+# aedes_ovi_plot <- ggplot(Aedes_ovi_results, aes(x = temperature, y = water, color = oviposition_rate)) +
+#   geom_point(size = 4) +
+#   scale_color_viridis_c(
+#     option = "viridis",  # Choose the viridis palette (other options: "plasma", "magma", "cividis")
+#     name = "Oviposition Rate"
+#   ) +
+#   labs(
+#     # title = "Oviposition Rate by Temperature and Water",
+#     x = "Temperature (°C)",
+#     y = expression("Water" ~ (m^2))
+#   ) +
+#     scale_x_continuous(breaks = unique(Aedes_ovi_results$temperature)) +  # Set x-axis ticks
+#   scale_y_continuous(breaks = unique(Aedes_ovi_results$water)) +        # Set y-axis ticks
+#   guides(color = guide_colorbar()) +  # Explicitly add the color bar
+#   theme_minimal()+
+#   theme(
+#     legend.position = "right",  # Ensure the legend is on the right
+#     axis.title = element_text(size = 10),
+#     legend.title = element_text(size = 8),  # Adjust legend title size
+#     legend.text = element_text(size = 8)    # Adjust legend text size
+#   )
+# 
 
 
 ```
