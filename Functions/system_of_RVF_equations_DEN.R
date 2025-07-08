@@ -379,14 +379,7 @@ system_of_RVF_equations_density_temp_Aedes <- function(t, State, Pars) {
     Td <- 6 # 6 Minimum desiccation period in days
 
     delta_sp <- 0.197 #0.197 # proportion of spontaneous hatching without flooding
-    
-    
-    # these vales used to find state variables:
-    # Td <- 0 # 6 Minimum desiccation period in days
-    # 
-    # delta_sp <- 1 #0.197 # proportion of spontaneous hatching without flooding - since there is no flooding, this is set to 1, otherwise the population goes to 0
-    
-    
+
     # 1/rate = actual time for eggs to hatch, the bigger of:
     theta_A_O_inv <- pmax(Td, 1/Schoolfield(temperature_t, Aedes_Embryogenesis)) # eq. 15 GL2018 supplementary
     
@@ -403,14 +396,14 @@ system_of_RVF_equations_density_temp_Aedes <- function(t, State, Pars) {
     
     a_Culex <- biting_rate(temperature_t)[[1]]
     a_Aedes <- biting_rate(temperature_t)[[2]]
-
+    
     ov_A <- oviposition_rate_Aedes(t, Pars)[[1]] # Oviposition rate Aedes
     b_A <- oviposition_rate_Aedes(t, Pars)[[2]] # Eggs per batch Aedes
     K_A <- oviposition_rate_Aedes(t, Pars)[[3]] # Carrying capacity eggs in pond
     tau_A_O2 <- oviposition_rate_Aedes(t, Pars)[[4]] # Hatching rate Aedes
     
     N_L1 <- livestocktotal
-
+    
     # Total Aedes = only adults female A1 and A2 are biting
     N_Aedes <- (A1_a + A2_a)
     
@@ -419,20 +412,20 @@ system_of_RVF_equations_density_temp_Aedes <- function(t, State, Pars) {
     Egg_Aedes <- min(max(O_a1 + O_a2, 0), K_A)
     
     # Vector to host ratio for Aedes:    
-    m_A_L1 <- prop_find*(N_Aedes/N_L1)
+    m_A_L1 <- prop_find*(N_Aedes/N_L1) #eq 11
     
     # These are the absolute developmental rates for adults: Take into account the vector to host ratio
-    theta_A_A1 <- theta_A_A1_no_lim/(1 + (m_A_L1)/q_divided)
-    theta_A_A2 <- theta_A_A2_no_lim/(1 + (m_A_L1)/q_divided)
+    theta_A_A1 <- theta_A_A1_no_lim/(1 + (m_A_L1)/q_divided) #eq 13
+    theta_A_A2 <- theta_A_A2_no_lim/(1 + (m_A_L1)/q_divided) #eq 13
     
     # Eggs laid per batch for Aedes   
-    b_A_dens <- b_A/(1 + (m_A_L1)/q_divided)
-
+    b_A_dens <- b_A/(1 + (m_A_L1)/q_divided) #eq 10
+    
     # DIFFERENTIAL EQUATIONS ---------------------------------------------------
-
+    
     # Number entering compartment per day = positive
     # Number exiting compartment per day = negative
-
+    
     # Immature eggs:
     dO_a1 <- b_A_dens*(1 - Egg_Aedes/K_A)*ov_A*(F_a) - mu_A_Oi*O_a1 - theta_A_O*O_a1
     # Mature eggs:
@@ -447,7 +440,7 @@ system_of_RVF_equations_density_temp_Aedes <- function(t, State, Pars) {
     dF_a <- theta_A_A1*A1_a + theta_A_A2*A2_a - ov_A*F_a - mu_A*F_a
     # Parous adults:
     dA2_a <- ov_A*F_a - mu_A*A2_a - theta_A_A2*A2_a
-
+    
     return(list(c(dO_a1,
                   dO_a2, dL_a,
                   dP_a, dA1_a,
@@ -579,8 +572,9 @@ system_of_RVF_equations_density_periodic_Aedes <- function(t, State, Pars) {
     # Eggs were submerged before achieving min desiccation period
     
     Td <- 6 # 6 Minimum desiccation period in days
-    
+
     delta_sp <- 0.197 #0.197 # proportion of spontaneous hatching without flooding
+    
     
     # 1/rate = actual time for eggs to hatch, the bigger of:
     theta_A_O_inv <- pmax(Td, 1/Schoolfield(temperature_t, Aedes_Embryogenesis)) # eq. 15 GL2018 supplementary
