@@ -1,0 +1,941 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r - import packages}
+rm(list = ls())
+
+library(rstudioapi)
+library(deSolve)
+library(rootSolve)
+library(tidyverse)
+library(sensobol)
+library(data.table)
+library(EnvStats)
+library(nimble)
+
+source("Single_System.R", chdir = TRUE)
+source("SA_MultipleRuns.R", chdir = TRUE)
+
+```
+
+```{r - parameters that can change}
+N <<- 2000
+day_length <<- 365 * 10  #100
+modeloutput <<- "allMozadultsmeanlast28days"
+what <<- "SA" # one or SA (i.e. sensitivity analysis)
+cellarea <<- 1
+
+# uncomment if only running a single scenario, otherwise it is run as a for loop
+# constanttemp <<- 25 # constant temperature - start mid = 25 degrees C, low = 21, high = 29
+# constantwb <<- 17500 # constant water body area -start  mid = 17,500 , low 10,000 high=25,000
+# prop_find <<- 0.1 # start mid = 10%, low = 0.01, high = 0.5
+
+# Now in the analysis:
+# # # livestocktotal <<- 500
+
+
+# Define parameter levels
+param_levels <- list(
+  constanttemp = c(low = 21, mid = 25, high = 29),
+  constantwb = c(low = 10000, mid = 17500, high = 25000),
+  prop_find = c(low = 0.01, mid = 0.1, high = 0.5)
+)
+
+# Create scenarios - this will run in a for loop
+scenarios <- list(
+  list(name = "baseline", constanttemp = "mid", constantwb = "mid", prop_find = "mid"),
+  list(name = "temp_low", constanttemp = "low", constantwb = "mid", prop_find = "mid"),
+  list(name = "temp_high", constanttemp = "high", constantwb = "mid", prop_find = "mid"),
+  list(name = "wb_low", constanttemp = "mid", constantwb = "low", prop_find = "mid"),
+  list(name = "wb_high", constanttemp = "mid", constantwb = "high", prop_find = "mid"),
+  list(name = "find_low", constanttemp = "mid", constantwb = "mid", prop_find = "low"),
+  list(name = "find_high", constanttemp = "mid", constantwb = "mid", prop_find = "high")
+)
+
+
+```
+
+```{r - set up Sobol matrices}
+#lambda_C = b_C in paper
+lambda_C_q <<- "qnorm"; lambda_C_mean <<- 149 ; lambda_C_sd <<- 16.2
+#lambda_A = b_A in paper
+lambda_A_q <<- "qnorm"; lambda_A_mean <<- 55 ; lambda_A_sd <<- 2.80
+#rho_max_C
+rho_max_C_q <<- "qunif"; rho_max_C_min <<- 500000 ; rho_max_C_max <<- 20000000
+#rho_max_A
+rho_max_A_q <<- "qunif"; rho_max_A_min <<- 12000 ; rho_max_A_max <<- 1000000
+#A_C
+A_C_q <<- "qtri"; A_C_min <<- 196000 ; A_C_max <<- 15904000 ; A_C_mode <<- 9621000 
+#A_A
+A_A_q <<- "qgamma"; A_A_shape <<- 2.5; A_A_scale <<- 10000
+#kappa_C 
+kappa_C_q <<- "qunif"; kappa_C_min <<- 0.001 ; kappa_C_max <<- 0.999
+#kappa_A
+kappa_A_q <<- "qunif"; kappa_A_min <<- 0.001 ; kappa_A_max <<- 0.999
+
+#q_divided
+q_divided_q <<- "qunif"; q_divided_min <<- 1 ; q_divided_max <<- 1E7
+#q_divided
+livestocktotal_q <<- "qunif"; livestocktotal_min <<- 1 ; livestocktotal_max <<- 1000
+
+
+factors_C <<- c("lambda_C", 
+                "rho_max_C",
+                "A_C", 
+                "kappa_C",
+                "q_divided",
+                "livestocktotal")
+
+factors_A <<- c("lambda_A", 
+                "rho_max_A",
+                "A_A", 
+                "kappa_A",
+                "q_divided",
+                "livestocktotal")
+
+order <- "third"
+sobolmatrix_C <<- sobol_matrices(N=2000, params=factors_C, order=order)
+sobolmatrix_A <<- sobol_matrices(N=2000, params=factors_A, order=order)
+samples_C <- sobolmatrix_C
+samples_A <- sobolmatrix_A
+
+samples_C[, "lambda_C"] <- 
+  match.fun(get(paste0("lambda_C", "_q")))(samples_C[, paste0("lambda_C")],
+                                           mean = get(paste0("lambda_C", "_mean")),
+                                           sd = get(paste0("lambda_C", "_sd")))
+
+samples_C[, "rho_max_C"] <- 
+  match.fun(get(paste0("rho_max_C", "_q")))(samples_C[, paste0("rho_max_C")],
+                                            min = get(paste0("rho_max_C", "_min")),
+                                            max = get(paste0("rho_max_C", "_max")))
+
+samples_C[, "A_C"] <- 
+  match.fun(get(paste0("A_C", "_q")))(samples_C[, paste0("A_C")],
+                                      min = get(paste0("A_C", "_min")),
+                                      max = get(paste0("A_C", "_max")),
+                                      mode = get(paste0("A_C", "_mode")))
+
+samples_C[, "kappa_C"] <- 
+  match.fun(get(paste0("kappa_C", "_q")))(samples_C[, paste0("kappa_C")],
+                                          min = get(paste0("kappa_C", "_min")),
+                                          max = get(paste0("kappa_C", "_max")))
+samples_C[, "q_divided"] <- 
+  match.fun(get(paste0("q_divided", "_q")))(samples_C[, paste0("q_divided")],
+                                          min = get(paste0("q_divided", "_min")),
+                                          max = get(paste0("q_divided", "_max")))
+samples_C[, "livestocktotal"] <- 
+  match.fun(get(paste0("livestocktotal", "_q")))(samples_C[, paste0("livestocktotal")],
+                                          min = get(paste0("livestocktotal", "_min")),
+                                          max = get(paste0("livestocktotal", "_max")))
+
+samples_A[, "lambda_A"] <-
+  match.fun(get(paste0("lambda_A", "_q")))(samples_A[, paste0("lambda_A")],
+                                           mean = get(paste0("lambda_A", "_mean")),
+                                           sd = get(paste0("lambda_A", "_sd")))
+
+samples_A[, "rho_max_A"] <-
+  match.fun(get(paste0("rho_max_A", "_q")))(samples_A[, paste0("rho_max_A")],
+                                            min = get(paste0("rho_max_A", "_min")),
+                                            max = get(paste0("rho_max_A", "_max")))
+
+samples_A[, "A_A"] <-
+  match.fun(get(paste0("A_A", "_q")))(samples_A[, paste0("A_A")],
+                                      shape = get(paste0("A_A", "_shape")),
+                                      scale = get(paste0("A_A", "_scale")))
+
+samples_A[, "kappa_A"] <-
+  match.fun(get(paste0("kappa_A", "_q")))(samples_A[, paste0("kappa_A")],
+                                          min = get(paste0("kappa_A", "_min")),
+                                          max = get(paste0("kappa_A", "_max")))
+samples_A[, "q_divided"] <- 
+  match.fun(get(paste0("q_divided", "_q")))(samples_A[, paste0("q_divided")],
+                                          min = get(paste0("q_divided", "_min")),
+                                          max = get(paste0("q_divided", "_max")))
+samples_A[, "livestocktotal"] <- 
+  match.fun(get(paste0("livestocktotal", "_q")))(samples_A[, paste0("livestocktotal")],
+                                          min = get(paste0("livestocktotal", "_min")),
+                                          max = get(paste0("livestocktotal", "_max")))
+
+rm(A_A_q, A_A_scale, A_A_shape)
+rm(A_C_max, A_C_min, A_C_mode, A_C_q)
+rm(kappa_A_max, kappa_A_min,kappa_A_q)
+rm(kappa_C_max,kappa_C_min,kappa_C_q)
+rm(lambda_A_mean,lambda_A_q,lambda_A_sd)
+rm(lambda_C_mean,lambda_C_q,lambda_C_sd)
+rm(rho_max_A_max,rho_max_A_min,rho_max_A_q)
+rm(rho_max_C_max,rho_max_C_min,rho_max_C_q)
+rm(q_divided_q,q_divided_min,q_divided_max)
+rm(livestocktotal_q,livestocktotal_min, livestocktotal_max)
+
+rm(sobolmatrix_A,sobolmatrix_C)
+```
+
+```{r - Sobol run: Culex (loop through scenario)}
+
+results_list <- list()
+
+time_taken <- system.time({
+for (scenario in scenarios) {
+  # Set parameters
+  constanttemp <<- param_levels$constanttemp[[scenario$constanttemp]]
+  constantwb <<- param_levels$constantwb[[scenario$constantwb]]
+  prop_find <<- param_levels$prop_find[[scenario$prop_find]]
+  
+  # Run simulation
+  cat("Running scenario:", scenario$name, "\n")
+  time_taken <- system.time({
+    multiRunOutput <- multiRun_CulexOnly(as.matrix(samples_C))
+  })
+  
+  # Store results
+  indices <- sobol_indices(Y = multiRunOutput, params = factors_C, 
+                           N = N)
+  plottableIndices <- as.data.frame(indices$results)
+  results_list[[scenario$name]] <- list(indices = plottableIndices, time = time_taken)
+  # Print completion message
+  cat("✅ Completed scenario:", scenario$name, "in", round(time_taken["elapsed"], 2), "seconds\n\n")
+}
+  
+})
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+
+```
+
+```{r - Sobol run: Aedes (loop through scenario)}
+
+results_list <- list()
+
+time_taken <- system.time({
+for (scenario in scenarios) {
+  # Set parameters
+  constanttemp <<- param_levels$constanttemp[[scenario$constanttemp]]
+  constantwb <<- param_levels$constantwb[[scenario$constantwb]]
+  prop_find <<- param_levels$prop_find[[scenario$prop_find]]
+  
+  # Run simulation
+  cat("Running scenario:", scenario$name, "\n")
+  time_taken <- system.time({
+    multiRunOutput <- multiRun_AedesOnly(as.matrix(samples_A))
+  })
+  
+  # Store results
+  indices <- sobol_indices(Y = multiRunOutput, params = factors_A, 
+                           N = N)
+  plottableIndices <- as.data.frame(indices$results)
+  results_list[[scenario$name]] <- list(indices = plottableIndices, time = time_taken)
+  # Print completion message
+  cat("✅ Completed scenario:", scenario$name, "in", round(time_taken["elapsed"], 2), "seconds\n\n")
+}
+  
+})
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+
+```
+
+```{r - combine into one dataframe}
+# Combine all results into one data frame
+combined_results <- bind_rows(
+  lapply(names(results_list), function(name) {
+    df <- results_list[[name]]$indices
+    df$scenario <- name
+    return(df)
+  })
+)
+combined_results <- combined_results %>%
+  mutate(
+    temperature = case_when(
+      scenario == "temp_low" ~ 21,
+      scenario == "temp_high" ~ 29,
+      TRUE ~ 25
+    ),
+    water = case_when(
+      scenario == "wb_low" ~ 10000,
+      scenario == "wb_high" ~ 25000,
+      TRUE ~ 17500
+    ),
+    prop = case_when(
+      scenario == "find_low" ~ 0.01,
+      scenario == "find_high" ~ 0.5,
+      TRUE ~ 0.1
+    )
+  )
+```
+
+```{r - Culex plots - scenarios}
+
+library(patchwork)
+
+baseline_results <- combined_results %>%
+  filter(scenario == "baseline")
+
+indexPlot <- ggplot(data = baseline_results, aes(x = parameters, y = original, colour = parameters)) +
+  geom_point(shape = "square", size = 2) +
+  facet_wrap(~sensitivity,
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+  labs(
+    y = "Sobol Sensitivity Index",
+    x = "Parameter"
+  ) +
+  scale_color_viridis_d(option = "viridis") +
+  scale_x_discrete(
+    labels = c(
+      "A_C" = expression(atop(italic(A[C]), "")),
+      "kappa_C" = expression(atop(italic(kappa^{"Culex"}), "")),
+      "lambda_C" = expression(atop(italic(b[C]), "")),
+      "livestocktotal" = expression(atop("Livestock", "Total")),
+      "q_divided" = expression(atop(italic(q), "")),
+      "rho_max_C" = expression(atop(italic(rho[C]), ""))
+    )
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 10),
+    axis.text.x = element_text(size = 8, lineheight = 1, vjust = 0, margin = margin(t = 4)),
+    axis.text.y = element_text(size = 8),
+    strip.text = element_text(size = 8),
+    plot.title = element_text(size = 12)
+)  
+
+plot_temperature <- ggplot(
+  data = combined_results %>% filter(scenario %in% c("temp_low", "baseline", "temp_high")),
+  aes(x = temperature, y = original, col = parameters)) + 
+  geom_line() + 
+  geom_point() + 
+  facet_wrap(~sensitivity, scales = "free",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = expression("Temperature (" * degree * "C)"),
+       y = "Sobol Sensitivity Index",
+       col = "Parameters") +
+  scale_color_viridis_d(
+    option = "viridis"
+    # labels = c(expression(italic(A[C])), 
+    #            expression(italic(kappa^{"Culex"})), 
+    #            expression(italic(b[C])), 
+    #            expression(italic(rho[C])))
+  ) +
+  scale_x_continuous(breaks = c(21, 25, 29)) +
+  theme_classic() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12))
+
+plot_water <- ggplot(
+  data = combined_results %>% filter(scenario %in% c("wb_low", "baseline", "wb_high")),
+  aes(x = water, y = original, col = parameters)
+) + 
+  geom_line() + 
+  geom_point() + 
+  facet_wrap(~sensitivity, scales = "free",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = expression("Water Body Area (" * m^2 * ")"),
+       y = "Sobol Sensitivity Index",
+       col = "Parameters") +
+  scale_color_viridis_d(
+    option = "viridis"
+    # labels = c(expression(italic(A[C])), 
+    #            expression(italic(kappa^{"Culex"})), 
+    #            expression(italic(b[C])), 
+    #            expression(italic(rho[C])))
+  ) +
+  scale_x_continuous(breaks = c(10000, 17500, 25000)) +
+  theme_classic() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12))
+
+plot_prop <- ggplot(
+  data = combined_results %>% filter(scenario %in% c("find_low", "baseline", "find_high")),
+  aes(x = prop, y = original, col = parameters)
+) + 
+  geom_line() + 
+  geom_point() + 
+  facet_wrap(~sensitivity, scales = "free",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = expression("Detection Probability (" * italic(p[f]) * ")"),
+       y = "Sobol Sensitivity Index",
+       col = "Parameters") +
+  scale_color_viridis_d(
+    option = "viridis",
+    labels = c(expression(italic(A[C])),
+               expression(italic(kappa^{"Culex"})),
+               expression(italic(b[C])),
+               expression("Livestock Total"),
+               expression(italic(q)),
+               expression(italic(rho[C])))
+  ) +
+  scale_x_continuous(breaks = c(0.01, 0.1, 0.5)) +
+  theme_classic() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12))
+
+shared_color_scale <- scale_color_viridis_d(
+  option = "viridis",
+  labels = c(expression(italic(A[C])),
+             expression(italic(kappa^{"Culex"})),
+             expression(italic(b[C])),
+             expression("Livestock Total"),
+             expression(italic(q)),
+             expression(italic(rho[C])))
+  )
+
+plot_temperature_clean <- plot_temperature + shared_color_scale + theme(legend.position = "none")
+plot_water_clean <- plot_water + shared_color_scale + theme(legend.position = "none")
+plot_prop_clean <- plot_prop + shared_color_scale
+
+
+# Combine with shared legend
+combined <- (plot_temperature_clean / plot_water_clean / plot_prop_clean) +
+  plot_layout(heights = c(1, 1, 1), guides = "collect") & 
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12),
+        legend.position = "right")
+```
+
+```{r - Save Culex - have a folder called Output in the folder with the code}
+# Save as PNG
+ggsave("Output/CULEX_sobol_baseline_plot.png", plot = indexPlot, width = 6, height = 2, dpi = 300)
+ggsave("Output/CULEX_sobol_combined_plot.png", plot = combined, width = 6, height = 6, dpi = 300)
+
+# Save as TIFF
+ggsave("Output/CULEX_sobol_baseline_plot.tiff", plot = indexPlot, width = 6, height = 2, dpi = 300)
+ggsave("Output/CULEX_sobol_combined_plot.tiff", plot = combined, width = 6, height = 6, dpi = 300)
+
+# Save as PDF
+ggsave("Output/CULEX_sobol_baseline_plot.pdf", plot = indexPlot, width = 6, height = 2)
+ggsave("Output/CULEX_sobol_combined_plot.pdf", plot = combined, width = 6, height = 6)
+
+save.image("Output/Culex_constant_combined.RData")
+```
+
+```{r - Aedes plots - scenarios}
+
+baseline_results <- combined_results %>%
+  filter(scenario == "baseline")
+
+indexPlot <- ggplot(data = baseline_results, aes(x = parameters, y = original, colour = parameters)) +
+  geom_point(shape = "square", size = 2) +
+  facet_wrap(~sensitivity,
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+  labs(
+    y = "Sobol Sensitivity Index",
+    x = "Parameter"
+  ) +
+  scale_color_viridis_d(option = "viridis") +
+  scale_x_discrete(
+      labels = c(
+      "A_A" = expression(atop(italic(A[A]), "")),
+      "kappa_A" = expression(atop(italic(kappa^{"Aedes"}), "")),
+      "lambda_A" = expression(atop(italic(b[A]), "")),
+      "livestocktotal" = expression(atop("Livestock", "Total")),
+      "q_divided" = expression(atop(italic(q), "")),
+      "rho_max_A" = expression(atop(italic(rho[A]), ""))
+    )
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 10),
+    axis.text.x = element_text(size = 8, lineheight = 1, vjust = 0, margin = margin(t = 4)),
+    axis.text.y = element_text(size = 8),
+    strip.text = element_text(size = 8),
+    plot.title = element_text(size = 12)
+)  
+
+plot_temperature <- ggplot(
+  data = combined_results %>% filter(scenario %in% c("temp_low", "baseline", "temp_high")),
+  aes(x = temperature, y = original, col = parameters)
+) + 
+  geom_line() + 
+  geom_point() + 
+  facet_wrap(~sensitivity, scales = "free",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = expression("Temperature (" * degree * "C)"),
+       y = "Sobol Sensitivity Index",
+       col = "Parameters") +
+  scale_color_viridis_d(
+    option = "viridis"
+  ) +
+  scale_x_continuous(breaks = c(21, 25, 29)) +
+  theme_classic() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12))
+
+plot_water <- ggplot(
+  data = combined_results %>% filter(scenario %in% c("wb_low", "baseline", "wb_high")),
+  aes(x = water, y = original, col = parameters)
+) + 
+  geom_line() + 
+  geom_point() + 
+  facet_wrap(~sensitivity, scales = "free",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = expression("Water Body Area (" * m^2 * ")"),
+       y = "Sobol Sensitivity Index",
+       col = "Parameters") +
+  scale_color_viridis_d(
+    option = "viridis"
+  ) +
+  scale_x_continuous(breaks = c(10000, 17500, 25000)) +
+  theme_classic() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12))
+
+plot_prop <- ggplot(
+  data = combined_results %>% filter(scenario %in% c("find_low", "baseline", "find_high")),
+  aes(x = prop, y = original, col = parameters)
+) + 
+  geom_line() + 
+  geom_point() + 
+  facet_wrap(~sensitivity, scales = "free",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = expression("Detection Probability (" * italic(p[f]) * ")"),
+       y = "Sobol Sensitivity Index",
+       col = "Parameters") +
+  scale_color_viridis_d(
+    option = "viridis",
+    labels = c(expression(italic(A[A])),
+               expression(italic(kappa^{"Aedes"})),
+               expression(italic(b[A])),
+               expression("Livestock Total"),
+               expression(italic(q)),
+               expression(italic(rho[A])))
+  ) +
+  scale_x_continuous(breaks = c(0.01, 0.1, 0.5)) +
+  theme_classic() +
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12))
+
+
+library(patchwork)
+
+shared_color_scale <- scale_color_viridis_d(
+  option = "viridis",
+  labels = c(expression(italic(A[A])),
+               expression(italic(kappa^{"Aedes"})),
+               expression(italic(b[A])),
+               expression("Livestock Total"),
+               expression(italic(q)),
+               expression(italic(rho[A])))
+)
+
+plot_temperature_clean <- plot_temperature + shared_color_scale + theme(legend.position = "none")
+plot_water_clean <- plot_water + shared_color_scale + theme(legend.position = "none")
+plot_prop_clean <- plot_prop + shared_color_scale
+
+# Combine with shared legend
+combined <- (plot_temperature_clean / plot_water_clean / plot_prop_clean) +
+  plot_layout(heights = c(1, 1, 1), guides = "collect") & 
+  theme(axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        strip.text = element_text(size = 8),
+        plot.title = element_text(size = 12),
+        legend.position = "right")
+```
+
+```{r - Save Aedes}
+# Save as PNG
+ggsave("Output/AEDES_sobol_baseline_plot.png", plot = indexPlot, width = 6, height = 2, dpi = 300)
+ggsave("Output/AEDES_sobol_combined_plot.png", plot = combined, width = 6, height = 6, dpi = 300)
+
+# Save as TIFF
+ggsave("Output/AEDES_sobol_baseline_plot.tiff", plot = indexPlot, width = 6, height = 2, dpi = 300)
+ggsave("Output/AEDES_sobol_combined_plot.tiff", plot = combined, width = 6, height = 6, dpi = 300)
+
+# Save as PDF
+ggsave("Output/AEDES_sobol_baseline_plot.pdf", plot = indexPlot, width = 6, height = 2)
+ggsave("Output/AEDES_sobol_combined_plot.pdf", plot = combined, width = 6, height = 6)
+
+save.image("Output/AEDES_constant_combined.RData")
+```
+
+```{r - create data frames to compare indices across scenarios as percentage changes}
+library(dplyr)
+library(tidyr)
+
+temp_data <- plot_temperature$data
+
+# Step 1: Filter for relevant temperatures
+filtered_temp <- temp_data %>%
+  filter(temperature %in% c(21, 25, 29))
+
+# Step 2: Pivot wider to compare values side-by-side
+temp_comparison <- filtered_temp %>%
+  dplyr::select(sensitivity, parameters, temperature, original) %>%
+  tidyr::pivot_wider(
+    names_from = temperature,
+    values_from = original,
+    names_prefix = "temp_"
+  ) %>%
+  tidyr::drop_na()
+  
+# Step 3: Calculate percent changes and fold changes
+temp_comparison <- temp_comparison %>%
+  mutate(
+    change_21_25 = 100 * (temp_25 - temp_21) / temp_21,
+    change_25_29 = 100 * (temp_29 - temp_25) / temp_25,
+    fold_21_29 = temp_29 / temp_21
+  )
+
+water_data <- plot_water$data
+
+# Step 1: Filter for the two water body areas
+filtered_water <- water_data %>%
+  filter(water %in% c(10000, 17500, 25000))
+
+# Step 2: Pivot wider to compare values side-by-side
+water_comparison <- filtered_water %>%
+  dplyr::select(sensitivity, parameters, water, original) %>%
+  tidyr::pivot_wider(
+    names_from = water,
+    values_from = original,
+    names_prefix = "water_"
+  ) %>%
+  tidyr::drop_na()
+
+# Step 3: Calculate percent changes and fold changes
+water_comparison <- water_comparison %>%
+  mutate(
+    change_10_17 = 100 * (water_17500 - water_10000) / water_10000,
+    change_17_25 = 100 * (water_25000 - water_17500) / water_17500,
+    fold_10_25 = water_25000 / water_10000
+  )
+
+prop_data <- plot_prop$data
+
+# Step 1: Filter for relevant proportion values
+filtered_prop <- prop_data %>%
+  filter(prop %in% c(0.01, 0.1, 0.5))
+
+# Step 2: Pivot wider to compare values side-by-side
+prop_comparison <- filtered_prop %>%
+  dplyr::select(sensitivity, parameters, prop, original) %>%
+  tidyr::pivot_wider(
+    names_from = prop,
+    values_from = original,
+    names_prefix = "prop_"
+  ) %>%
+  tidyr::drop_na()
+  
+# Step 3: Calculate percent changes and fold changes
+prop_comparison <- prop_comparison %>%
+  mutate(
+    change_001_01 = 100 * (prop_0.1 - prop_0.01) / prop_0.01,
+    change_01_05 = 100 * (prop_0.5 - prop_0.1) / prop_0.1,
+    fold_001_05 = prop_0.5 / prop_0.01
+  )
+```
+
+Run individual scenarios:
+
+```{r - Sobol run: Culex}
+source("SA_MultipleRuns.R", chdir = TRUE)
+
+# Measure the time taken for running multiple simulations
+time_taken <- system.time({
+  
+  # Run simulation multiple times through different parameter combos:
+  multiRunOutput <- multiRun_CulexOnly(as.matrix(samples_C))
+  
+})
+
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+
+# Obtain Sobol Sensitivity Indices:
+indices <- sobol_indices(Y = multiRunOutput, params = factors_C, 
+                         N = N, order = "third")
+
+plottableIndices <- as.data.frame(indices$results)
+```
+
+```{r - Sobol run: Aedes}
+
+source("SA_MultipleRuns.R", chdir = TRUE)
+
+# Measure the time taken for running multiple simulations
+time_taken <- system.time({
+  
+  # Run simulation multiple times through different parameter combos:
+  multiRunOutput <- multiRun_AedesOnly(as.matrix(samples_A))
+  
+})
+
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+
+# Obtain Sobol Sensitivity Indices:
+indices <- sobol_indices(Y = multiRunOutput, params = factors_A, 
+                         N = N, order = "third")
+
+plottableIndices <- as.data.frame(indices$results)
+```
+
+```{r - second order indices}
+
+library(tidyr)
+library(dplyr)
+
+sij_df <- plottableIndices %>%
+  filter(sensitivity == "Sij")
+
+sij_df <- sij_df %>%
+  separate(parameters, into = c("param1", "param2"), sep = "\\.")
+
+
+si_ti_df <- plottableIndices %>%
+  filter(sensitivity %in% c("Si", "Ti"))
+
+
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Define parameter order
+param_order <- sort(unique(c(sij_df$param1, sij_df$param2)))
+
+sij_df <- sij_df %>%
+  mutate(
+    param1 = factor(param1, levels = param_order),
+    param2 = factor(param2, levels = param_order),
+
+    # Step 2: numeric indices
+    i = as.numeric(param1),
+    j = as.numeric(param2),
+
+    # Step 3: reorder so that every pair falls into the LOWER triangle
+    param_low  = factor(param_order[pmax(i, j)], levels = param_order),
+    param_high = factor(param_order[pmin(i, j)], levels = param_order)
+  )
+
+# param_order <- c(
+#   "A_C",
+#   "kappa_C",
+#   "b_C",
+#   "rho_C",
+#   "livestocktotal",
+#   "q_divided"
+# )
+
+param_order <- c(
+  "A_A",
+  "kappa_A",
+  "b_A",
+  "rho_A",
+  "livestocktotal",
+  "q_divided"
+)
+
+sij_tri <- sij_df %>%
+  mutate(
+    param1 = factor(param1, levels = param_order),
+    param2 = factor(param2, levels = param_order),
+    i = as.numeric(param1),
+    j = as.numeric(param2),
+
+    # reorder pairs into lower triangle, but EXCLUDE diagonal
+    row = pmax(i, j),
+    col = pmin(i, j)
+  ) %>%
+  filter(row != col) %>%   # <-- REMOVE diagonal
+  mutate(
+    param_low  = factor(param_order[row], levels = param_order),
+    param_high = factor(param_order[col], levels = param_order)
+  )
+
+
+# param_labels_low <- c(
+#   expression(italic(A[C])),
+#   expression(italic(kappa^{"Culex"})),
+#   expression(italic(b[C])),
+#   expression(atop("Livestock", "Total")),
+#   expression(italic(q))
+# )
+# 
+# param_labels_high <- c(
+#   expression(italic(kappa^{"Culex"})),
+#   expression(italic(b[C])),
+#   expression(atop("Livestock", "Total")),
+#   expression(italic(q)),
+#   expression(italic(rho[C]))
+# )
+
+param_labels_low <- c(
+  expression(italic(A[A])),
+  expression(italic(kappa^{"Aedes"})),
+  expression(italic(b[A])),
+  expression(atop("Livestock", "Total")),
+  expression(italic(q))
+)
+
+param_labels_high <- c(
+  expression(italic(kappa^{"Aedes"})),
+  expression(italic(b[A])),
+  expression(atop("Livestock", "Total")),
+  expression(italic(q)),
+  expression(italic(rho[A]))
+)
+
+second_indices <- ggplot(sij_df, aes(x = param_high, y = param_low, fill = original)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    midpoint = 0,
+    name = "Index (Sij)"
+  ) +
+  coord_fixed() +
+  
+  # <<< CUSTOM PARAMETER LABELS HERE >>>
+  scale_x_discrete(labels = param_labels_low) +
+  scale_y_discrete(labels = param_labels_high) +
+  
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    axis.text.y = element_text(),
+    axis.ticks  = element_blank()
+  )
+
+ind_third <- plottableIndices %>% filter(sensitivity == "Sijl", original > 0.01)
+
+third_bar <- ggplot(ind_third, aes(x = reorder(parameters, -original), y = original)) +
+  geom_col(fill = "steelblue") +
+  labs(x = "Parameter triplet", y = "Third-order Sobol index") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+third_bar
+```
+
+```{r - Save Culex second order}
+# Save as PNG
+ggsave("Output/CULEX_sobol_second_plot.png", plot = second_indices, width = 4, height = 3, dpi = 300)
+
+# Save as TIFF
+ggsave("Output/CULEX_sobol_second_plot.tiff", plot = second_indices, width = 4, height = 3, dpi = 300)
+
+# Save as PDF
+ggsave("Output/CULEX_sobol_second_plot.pdf", plot = second_indices, width = 4, height = 3)
+
+save.image("Output/CULEX_secondorder.RData")
+
+```
+
+```{r - Save Culex second order}
+# Save as PNG
+ggsave("Output/AEDES_sobol_second_plot.png", plot = second_indices, width = 4, height = 3, dpi = 300)
+
+# Save as TIFF
+ggsave("Output/AEDES_sobol_second_plot.tiff", plot = second_indices, width = 4, height = 3, dpi = 300)
+
+# Save as PDF
+ggsave("Output/AEDES_sobol_second_plot.pdf", plot = second_indices, width = 4, height = 3)
+
+save.image("Output/AEDES_secondorder.RData")
+```
+
+```{r - create plots and save based on single run}
+
+#Change based on which mosquito investigating:
+# moz <- "A"
+moz <- "C"
+
+if (moz == "C"){
+indexPlot <- ggplot(data = si_ti_df, aes(x = parameters, y = original, colour = parameters)) +
+  geom_point(shape = "square", size = 2) +
+  facet_wrap(~sensitivity,
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+  theme_classic() +
+  labs(
+    y = "Sobol Sensitivity Index",
+    x = "Parameter"
+  ) +
+  scale_x_discrete(
+  labels = c(
+    expression(atop(italic(A[C]), "")),
+    expression(atop(italic(kappa^{"Culex"}), "")),
+    expression(atop(italic(b[C]), "")),
+    expression(atop(italic(rho[C]), "")),
+    expression(atop("Livestock", "Total")),
+    expression(atop(italic(q), ""))
+  )
+  ) +
+  scale_color_viridis_d(
+          option = "viridis",
+  ) +
+  theme(legend.position = "none",
+    axis.title = element_text(size = 10),    # Axis labels
+    axis.text.x = element_text(size = 8, lineheight = 1, vjust = 0, margin = margin(t = 4)), # x tick labels: reduce line spacing, move below axis
+    axis.text.y = element_text(size = 8),    # y tick labels
+    strip.text = element_text(size = 8),     # Facet titles
+    plot.title = element_text(size = 12)     # Main title) 
+  )
+indexPlot
+}
+if (moz == "A"){
+  indexPlot <- ggplot(data = plottableIndices, aes(x = parameters, y = original, colour = parameters)) +
+  geom_point(shape = "square", size = 2) +
+  facet_wrap(~sensitivity,
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", 
+                                                 "Ti" = "Total Effect Index"))) +
+  theme_classic() +
+  labs(
+    y = "Sobol Sensitivity Index",
+    x = "Parameter"
+  ) +
+  scale_x_discrete(
+    labels = c(
+      expression(italic(A[A])), 
+      expression(italic(kappa^{"Aedes"})), 
+      expression(italic(b[A])), 
+      expression(italic(rho[A]))
+    )
+  ) +
+  scale_color_viridis_d(
+          option = "viridis",
+  ) +
+  theme(legend.position = "none",
+    axis.title = element_text(size = 10),    # Axis labels
+    axis.text.x = element_text(size = 8, margin = margin(t = 4)), # keep Aedes consistent
+    axis.text.y = element_text(size = 8),    # Tick labels
+    strip.text = element_text(size = 8),     # Facet titles
+        plot.title = element_text(size = 12)     # Main title) 
+  )
+}
+  
+  
+file_Title <<- paste0(moz,constanttemp,"temp_",constantwb,"wb_",prop_find,"pf")
+
+ggsave(plot = indexPlot, file = paste0("Output/", file_Title, "indices.png"),
+       width = 6, height = 2)
+ggsave(plot = indexPlot, file = paste0("Output/", file_Title, "indices.pdf"),
+       width = 6, height = 2, device = pdf)
+ggsave(
+  plot = indexPlot,
+  file = paste0("Output/", file_Title, "indices.eps"),
+  width = 6,
+  height = 2,
+  device = "eps"
+)
+
+write.csv(combined_results,"indices.csv")
+save.image(file = paste0("Output/", file_Title, ".RData"))
+```
+
+
+
+

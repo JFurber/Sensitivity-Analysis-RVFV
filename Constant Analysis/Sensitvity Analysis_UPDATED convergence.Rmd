@@ -1,0 +1,136 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r - import packages}
+rm(list = ls())
+
+library(rstudioapi)
+library(deSolve)
+library(rootSolve)
+library(tidyverse)
+library(sensobol)
+library(data.table)
+library(EnvStats)
+library(nimble)
+
+source("Single_System.R", chdir = TRUE)
+source("SA_MultipleRuns.R", chdir = TRUE)
+
+```
+
+```{r - check for convergence}
+modeloutput <<- "allMozadultsmeanlast28days"
+what <<- "SA" # one or SA
+
+constanttemp <<- 25 # constant temperature - start mid = 25 degrees C, low = 21, high = 29
+constantwb <<- 17500 # constant water body area -start  mid = 17,500 , low 10,000 high=25,000
+prop_find <<- 0.1 # start mid = 10%, low = 0.01, high = 0.5
+cellarea <<- 1
+
+factors_C <<- c("lambda_C", 
+                "rho_max_C",
+                "A_C", 
+                "kappa_C",
+                "q_divided",
+                "livestocktotal")
+
+# Store results - change name based on list you are running - also change line 92 if change line 40
+convergence_results8 <- list()
+
+day_length <<- 10 * 365
+times <- seq(0, day_length, by = 1)
+
+# Sobol sample sizes to test - split to make running quicker/easier.
+# SobolSims_list <- c(80, 400, 800,  1600, 2400, 3200) #1
+# SobolSims_list <- c(4000,5000,6000) #2 
+# SobolSims_list <- c(7000, 8000) #3
+# SobolSims_list <- c(9000) #4
+# SobolSims_list <- c(10000) #5
+# SobolSims_list <- c(11000, 12000) #6
+# SobolSims_list <- c(13000, 14000) #7
+SobolSims_list <- c(15000) #8
+
+
+# SobolSims_list <- c(80, 400, 800, 1600, 2400, 3200, 4000,5000,6000,7000, 8000, 12000)
+# SobolSims_list <- c(9000,10000,11000,13000,14000,15000)
+# SobolSims_list <- c(16000)
+# Loop through each Sobol sample size
+for (i in seq_along(SobolSims_list)) {
+  
+  SobolSims <- SobolSims_list[i]
+  N <- SobolSims / 8  # Adjust if using first-order only
+  
+  cat("Running Sobol analysis with", SobolSims, "samples (N =", N, ")\n")
+  
+  # Generate Sobol matrices
+  sobolmatrix_C <- sobol_matrices(N = N, params = factors_C, order = "first")
+  samples_C <- sobolmatrix_C
+  
+  # Sample from distributions (same as your earlier code)
+  samples_C[, "lambda_C"]      <- qnorm(samples_C[, "lambda_C"], mean = 149, sd = 16.2)
+  samples_C[, "rho_max_C"]     <- qunif(samples_C[, "rho_max_C"], min = 5e5, max = 2e7)
+  samples_C[, "A_C"]           <- qtri(samples_C[, "A_C"], min = 196000, max = 15904000, mode = 9621000)
+  samples_C[, "kappa_C"]       <- qunif(samples_C[, "kappa_C"], min = 0.001, max = 0.999)
+  samples_C[, "q_divided"]     <- qunif(samples_C[, "q_divided"], min = 1, max = 1e7)
+  samples_C[, "livestocktotal"] <- qunif(samples_C[, "livestocktotal"], min = 1, max = 1000)
+  
+  # Run model
+  time_taken <- system.time({
+    multiRunOutput <- multiRun_CulexOnly(as.matrix(samples_C))
+  })
+  
+  # Compute Sobol indices
+  indices <- sobol_indices(Y = multiRunOutput, params = factors_C, N = N)
+  plottableIndices <- as.data.frame(indices$results)
+  plottableIndices$SobolSims <- SobolSims
+  plottableIndices$N <- N
+  plottableIndices$time <- time_taken["elapsed"]
+  
+  # Store
+  convergence_results8[[i]] <- plottableIndices
+}
+
+save.image("Output/Culex_convergence_8.RData")
+
+```
+
+```{r - import all into R and converge all dataframges to plot }
+# Combine all results
+
+convergence_df <- bind_rows(convergence_df1,convergence_df2,convergence_df3,convergence_df4,convergence_df5,convergence_df6,convergence_df7,convergence_df8,convergence_df9)
+```
+
+
+```{r - plot convergence results and save}
+library(ggplot2)
+
+converge<- ggplot(convergence_df, aes(x = N, y = original, col = parameters)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~sensitivity, scales = "free_y",
+             labeller = labeller(sensitivity = c("Si" = "First Order Index", "Ti" = "Total Effect Index"))) +
+  labs(x = "Sobol Sample Size (N)",
+       y = "Sobol Sensitivity Index",
+       col = "Parameter") +
+  scale_color_viridis_d(
+    option = "viridis",
+    labels = c(expression(italic(A[C])),
+               expression(italic(kappa^{"Culex"})),
+               expression(italic(b[C])),
+               expression("Livestock Total"),
+               expression(italic(q)),
+               expression(italic(rho[C])))
+  ) +
+  theme_classic()
+
+# 
+save.image("Culex_convergence_FULL.RData")
+ggsave(plot = converge, file = paste0("culex_convergence.png"),
+       width = 6, height = 2.5, device = png, scale=1.6)
+ggsave(plot = converge, file = paste0("culex_convergence.pdf"),
+       width = 6, height = 2.5, device = pdf, scale=1.6)
+```
+
+

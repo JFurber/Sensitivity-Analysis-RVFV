@@ -1,0 +1,444 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Sensitivity Analysis - Periodic - Culex
+```{r - import packages}
+rm(list = ls())
+
+library(rstudioapi)
+library(deSolve)
+library(rootSolve)
+library(tidyverse)
+library(sensobol)
+library(data.table)
+library(EnvStats)
+library(nimble)
+
+```
+
+```{r - load required functions and set up global parameters}
+# Load required functions
+source("Functions/system_of_RVF_equations_DEN.R", chdir = TRUE)
+source("Functions/development_rate.R", chdir = TRUE)
+source("Functions/mortality_rate.R", chdir = TRUE)
+source("Functions/oviposition_rate.R", chdir = TRUE)
+source("Functions/Sharpe_DeMichele_parameters.R", chdir=TRUE)
+source("Functions/ponds.R", chdir = TRUE) 
+source("Functions/temperature.R",chdir = TRUE)
+source("Functions/biting_rate.R", chdir = TRUE)
+
+# Set up global parameters needed by the ODE system functions
+# These will be exported to parallel workers
+#Parameters
+  
+delta_t <<- 1 # In days, the time step
+N_ponds <<- 1 # How many ponds in each cell - not ever changed N_ponds from 1
+reduction_C <<- 0.5 # Based on Figure 8 in Reisen, W. K., Fang, Y., & Martinez, V. M. (2006). Effects of temperature on the transmission of west nile virus by Culex tarsalis (Diptera: Culicidae). Journal of medical entomology, 43(2), 309–17. Retrieved from http://www.ncbi.nlm.nih.gov/pubmed/16619616
+reduction_A <<- 0.58 # Based on Figure 8 in Reisen, W. K., Fang, Y., & Martinez, V. M. (2006). Effects of temperature on the transmission of west nile virus by Culex tarsalis (Diptera: Culicidae). Journal of medical entomology, 43(2), 309–17. Retrieved from http://www.ncbi.nlm.nih.gov/pubmed/16619616
+b_L1 <<- 1/(5*365) # birth rate for livestock
+mu_L1 <<- 1/(5*365) # death rate for livestock
+# q_divided <<- 1E11 # parameter for the impact of the livestock on vector fecundity and gonotrophic cycles
+q_A <<- 0.007 # probability of transovarial transmission
+epsilon_L1 <<- 2/7# input by Sophie 1/2 - should it be 2/7?
+gamma_L1 <<- 1/30 # input by Sophie 1/3     - should it be 30?
+t_dep <<- 0.229 # average time for egg deposition = 0.229 days in lab ref(8) GL2018 supp
+
+# SET Pond and Temperature Conditions--------------------------------------------------    
+
+C_S_p <<- (17500)#8000  # this represents the average size of the ponds during the entire year. E.g. a dam of 100 m size on average
+alpha <- 0.4
+# maximum amplitude
+A_S_p <<- (1-alpha)*C_S_p  #initial cond 0.2% of the mean  #  S_p_0<-C_S_p-A_S_p   this represents the size of the ponds at time 0 and time T=365 days.
+
+omega_S_p <<- 2*3.14/(365)
+phi_S_p <<- acos(-1) #both acos(-1) = in phase, one = acos(1)
+pond_cond <- "periodic"
+
+# temperature
+omega_T_a <<- omega_S_p
+phi_T_a <<- acos(-1)
+C_T_a <<- 21 # mean temperature during period 2pi/omega_t
+A_T_a <<- 7 # maximum amplitude
+# livestocktotal <- 500
+# N_L1 <- livestocktotal
+
+```
+
+```{r - define model}
+system_of_RVF_equations_density_periodic_Culex <- function(t, State, Pars) {
+  
+  with(as.list(c(State, Pars)), { # Variables from State & Pars brought into function
+    
+    temperature_t <- temperature_periodic(t) # Converts temps to Kelvin for each day
+    # temperature_t <- constanttemp + 273.15 # Converts temps to Kelvin for each day when there is constant temperature
+    
+    # Mortality rates of species & life stage are dependent on temperature:
+    
+    mu_C_O <- mortality(temperature_t)[1] # Mortality rate for Culex eggs
+    mu_C_L <- mortality(temperature_t)[2] # Mortality rate for Culex larvae
+    mu_C_P <- mortality(temperature_t)[3] # Mortality rate for Culex pupae
+    mu_C_E <- mortality(temperature_t)[4] # Mortality rate for additional Culex pupal (delta in paper)
+    mu_C <- mortality(temperature_t)[5]   # Mortality rate for Culex adult
+    
+    # Culex developmental rates (egg, larva & pupa) dependent on temperature:
+    
+    theta_C_O <- 2 * Schoolfield(temperature_t, Culex_Embryogenesis) #assumed to be half the time for the first instar
+    theta_C_L <- Schoolfield(temperature_t, Culex_Larval_development)
+    theta_C_P <- Schoolfield(temperature_t, Culex_Pupal_development)
+    # based on the regression of Reisen, W. K., Milby, M. M., Presser, S. B., & Hardy, J. L. (1992). Ecology of mosquitoes and St. Louis encephalitis virus in the Los Angeles Basin of California, 1987-1990. Journal of medical entomology, 29(4), 582–98. table 3 figure 5 for Culex quinquefasciatus. Maybe you could use Culex tartalis or their mean (See their discussion about lab/field dicrepancy on page 588
+    
+    # Culex developmental rates (adults) with infinite blood meal availability:
+    
+    theta_C_A1_no_lim <- 0.0173*(temperature_t - 273.16 - 9.60) # eq. 12 GL2018 supplementary - from Fischer no matter Kelvin of celsius as we consider differences
+    theta_C_A2_no_lim <- theta_C_A1_no_lim/reduction_C
+    
+    a_Culex <- biting_rate(temperature_t)[[1]]
+    
+    epsilon_C <- EIP(temperature_t)[[1]] # Culex extrinsic incubation period
+    
+    ov_C <- oviposition_rate_periodic_Culex(t, Pars)[[1]] # Oviposition rate Culex
+    b_C <- oviposition_rate_periodic_Culex(t, Pars)[[2]] # Eggs per batch Culex
+    K_C <- oviposition_rate_periodic_Culex(t, Pars)[[3]] # Carrying capacity eggs in pond
+    
+    # Total livestock = sum of susceptible, exposed, infected and recovered:    
+    N_L1 <- livestocktotal
+    
+    # Total Culex = only adults female C1 and C2 are biting
+    N_Culex <- (A1_c + A2_c)
+    
+    # Vector to host ratio for Culex:
+    m_C_L1 <- prop_find*(N_Culex/N_L1)
+    
+    # Total Aedes = only adults female A1 and A2 are biting
+    N_Aedes <- 0
+    
+    # These are the absolute developmental rates for adults: Take into account the vector to host ratio
+    theta_C_A1 <- theta_C_A1_no_lim/(1 + ( m_C_L1)/q_divided)
+    theta_C_A2 <- theta_C_A2_no_lim/(1 + ( m_C_L1)/q_divided)
+    
+    phi_L1_C <- 1 # proportion of meal, if multiple host need to use Sota model
+    a_L1_C <- a_Culex*phi_L1_C # biting rate since phi = 1
+    a_L1_C_dens <- a_L1_C/(1 + ( m_C_L1)/q_divided)
+    
+    # Eggs laid per batch for Culex
+    b_C_dens <- b_C/(1 + ( m_C_L1)/q_divided)
+    
+    # DIFFERENTIAL EQUATIONS ---------------------------------------------------
+    
+    # Number entering compartment per day = positive
+    # Number exiting compartment per day = negative
+    
+    # CULEX SUSCEPTIBLE:
+    
+    # Eggs:
+    dO_c <- b_C_dens*(1 - min(O_c/K_C, 1))*ov_C*(F_c) - mu_C_O*O_c - theta_C_O*O_c
+    # Larvae:
+    dL_c <- theta_C_O*O_c - mu_C_L*L_c - theta_C_L*L_c
+    # Pupae:
+    dP_c <- theta_C_L*L_c - mu_C_P*P_c - theta_C_P*P_c
+    # Nulliparous adults:
+    dA1_c <- theta_C_P*(mu_C_E/2)*P_c - mu_C*A1_c - theta_C_A1*A1_c
+    # Flyers:
+    dF_c <- theta_C_A1*A1_c + theta_C_A2*A2_c - ov_C*F_c - mu_C*F_c
+    # Parous adults:
+    dA2_c <- ov_C*F_c - mu_C*A2_c - theta_C_A2*A2_c
+    
+    
+    
+    #--------------------------------------------------------------------------#
+    
+    return(list(c(dO_c, dL_c,
+                  dP_c, dA1_c,
+                  dF_c, dA2_c )))
+    
+  }
+  
+  )
+  
+}
+```
+
+```{r - settings}
+
+N <- 2000
+day_length <<- 365*11  #100
+cellarea <<- 1 
+prop_find <<- 0.1 # start mid = 10%, low = 0.01, high = 0.5
+
+varying_params <- c("lambda_C", "rho_max_C", "A_C", "kappa_C","q_divided","livestocktotal")
+fixed_params <- c(q_A, 
+                  b_L1, 
+                  mu_L1, 
+                  epsilon_L1, 
+                  gamma_L1, 
+                  # q_divided, 
+                  # as.numeric(N_L1), 
+                  prop_find
+                  # livestocktotal
+                  )
+
+times <- seq(0, day_length, by = delta_t)
+
+timeOutput <- c(365*9,3316,3344,3375,3405,3436,3466,3497,3528,3558,3589,3619,3650,3681,3709,3740,3770,3801,3831,3862,3893,3923,3954,3984,4015)
+
+
+
+```
+
+```{r - construct sample matrix }
+
+mat <- sobol_matrices(N = N, params = varying_params,order = "third")
+
+mat[, "lambda_C"] <- qnorm(mat[, "lambda_C"], mean = 149, sd = 16.2)
+mat[, "rho_max_C"] <- qunif(mat[, "rho_max_C"], min = 500000, max = 20000000)
+mat[, "A_C"] <- qtri(mat[, "A_C"], min = 196000 , max = 15904000, mode = 9621000 )
+mat[, "kappa_C"] <- qunif(mat[, "kappa_C"],min = 0.001, max = 0.999)
+mat[, "q_divided"] <- qunif(mat[, "q_divided"], min = 1, max = 1E7)
+mat[, "livestocktotal"] <- qunif(mat[, "livestocktotal"], min= 1, max = 1000)
+
+```
+
+```{r - run the model}
+
+state_C <- c(O_c = 100, L_c = 0, P_c = 0, A1_c = 0, F_c = 0, A2_c = 0)
+
+# Measure the time taken for running multiple simulations
+time_taken <- system.time({
+  
+  y <- vector("list", nrow(mat))
+  for (i in 1:nrow(mat)) {
+    # Combine varying + fixed parameters
+    param_run <- c(mat[i, ], fixed_params)
+    
+    y[[i]] <- sobol_ode(
+      d = param_run,
+      times = times,
+      timeOutput = timeOutput,
+      state = c(state_C),
+      func = system_of_RVF_equations_density_periodic_Culex
+    )
+    # Print progress every 10000 iterations (you can adjust this number)
+    if (i %% 10000 == 0) {
+      message("Completed ", i, " of ", nrow(mat), " simulations...")
+    }
+  }
+})
+
+print(paste("Time taken for running simulations and obtaining Sobol indices:", time_taken["elapsed"],"seconds"))
+```
+
+```{r - convert to data frame}
+# --------------------------
+# 5. Convert to data frame
+# --------------------------
+y <- lapply(y, unlist)                    # flatten lists
+Y <- as.data.frame(do.call(rbind, y))    # combine rows
+Y_all <- as.data.frame(do.call(rbind, y))    # combine rows
+# Assign run numbers and reshape to wide
+n_times <- length(timeOutput)
+n_runs <- nrow(mat)
+
+Y$run <- rep(1:n_runs, each = n_times)
+Y$time <- rep(timeOutput, times = n_runs)
+
+Y <- Y %>%
+  mutate(Adult_c = A1_c + F_c + A2_c)
+
+# (Optional) Keep only run, time, and Adult_c
+Y <- Y %>%
+  dplyr::select(run, time, Adult_c)
+
+# Pivot wider (if you want one column per time)
+Y_wide <- Y %>%
+  pivot_wider(
+    names_from = time,
+    values_from = Adult_c,
+    names_prefix = "Adult_c_"
+  ) %>%
+  mutate(across(starts_with("Adult_c_"), as.numeric))
+```
+
+```{r - compute sobol indices for all outputs}
+# --------------------------
+# 6. Compute Sobol indices for all outputs
+# --------------------------
+# compute Sobol indices only for combined adult counts at the two time points
+# Automatically detect all Adult_c_* columns
+outputs <- grep("^Adult_c_\\d+", names(Y_wide), value = TRUE)
+
+sobol_list <- map(outputs, function(out) {
+  res <- sobol_indices(Y = Y_wide[[out]], params = varying_params, N = N, order = "third")
+  tibble(
+    output = out,
+    parameter = res$results$parameters,
+    index_type = res$results$sensitivity,
+    value = res$results$original
+  )
+})
+
+sobol_df <- bind_rows(sobol_list)
+
+sobol_df1 <- sobol_df %>%
+  mutate(
+    time = str_extract(output, "\\d+"),         # extract numbers from column name
+    variable = "Adults"                        # only one output type now
+    # index_type = ifelse(index_type == "Si", "First-order", "Total-order")
+  )
+
+```
+
+```{r - plot for individual time points}
+# --------------------------
+# 7. Plot Sobol indices - plots individual plots for each time point
+# --------------------------
+sobolPlot <- ggplot(sobol_df, aes(x = parameter, y = value, fill = index_type)) +
+  geom_col(position = "dodge") +
+  facet_grid(variable ~ time) +
+  coord_flip() +
+  labs(
+    title = "Sobol Sensitivity Indices for Culex",
+    x = "Parameter",
+    y = "Sobol Index Value",
+    fill = "Index Type"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.y = element_blank()
+  )
+sobolPlot
+
+
+```
+
+```{r - time plot with weather}
+library(patchwork)
+library(ggtext)   # install.packages("ggtext")
+
+# Time sequence
+times <- seq(365*9, 365*11, by = 0.1)
+
+times_reset <- seq(0, 365*2, by = 0.1)
+
+# Shift so first element is 0
+timeOutputShifted <- timeOutput - timeOutput[1]
+
+timeOutputShifted
+
+sobol_df$time <- as.numeric(sobol_df$time)
+# Shift the time column so first entry becomes 0
+sobol_df$time_shifted <- sobol_df$time - min(sobol_df$time)
+
+sobol_df
+
+# Temperature and water data
+df_temps <- data.frame(time = times_reset, temperature = temperature_periodic(times_reset))
+df_water <- data.frame(time = times_reset, water = S_p_periodic(times_reset))
+
+#Ensure consistent types
+sobol_df <- sobol_df %>% mutate(time = as.numeric(as.character(time_shifted)))
+df_temps <- df_temps %>% mutate(time = as.numeric(as.character(time)))
+df_water <- df_water %>% mutate(time = as.numeric(as.character(time)))
+
+
+# Define a shared range before plotting
+xlims <- range(c(sobol_df$time_shifted, df_temps$time, df_water$time), na.rm = TRUE)
+
+# Define a labeller function
+param_labels <- c(
+  "A_C"           = "A<sub>C</sub>",           # subscript
+  "kappa_C"       = "κ<sup><i>Culex<i></sup>",      # superscript
+  "lambda_C"      = "b<sub>C</sub>",          # subscript
+  "rho_max_C"     = "ρ<sub>C</sub>",          # subscript
+  "q_divided"     = "q",
+  "livestocktotal"= "livestock <br> total"
+)
+
+p_sobol <- ggplot(sobol_df, aes(x = time, y = value, color = index_type, group = index_type)) +
+  geom_line() +
+  geom_point(size = 0.5)+
+  facet_grid(parameter ~ variable, labeller = labeller(parameter = param_labels)) +
+  scale_x_continuous(limits = xlims) +
+  labs(x = expression(italic(t ) (days)), y = "Sobol Sensitivity Index",color = "Index Type") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    strip.text.y = element_markdown()   # <-- this renders <sub>/<sup>
+  )
+
+p_temp <- ggplot(df_temps, aes(x = time, y = temperature)) +
+  geom_line(color = "blue") +
+  scale_x_continuous(limits = xlims) +   # same limits
+  labs(x = NULL, y = "Mean Temperature \n (Kelvins)") +
+  theme_minimal(base_size = 10)
+
+p_water <- ggplot(df_water, aes(x = time, y = water)) +
+  geom_line(color = "darkgreen") +
+  scale_x_continuous(limits = xlims) +   # same limits
+  labs(x = NULL, y = "Mean Surface Area \n of Water Bodies (m^2)") +
+  theme_minimal(base_size = 10)
+
+# combined <- (p_sobol / p_temp / p_water) +
+#   plot_layout(heights = c(5, 1, 1), guides = "collect") &
+#   theme(legend.position = "top")
+
+df_mosquito <- as.data.frame(do.call(rbind, y))    # combine rows
+
+# df_mosquito <- df_mosquito %>%
+#   mutate(simulation = rep(1:(n() / 13), each = 13))
+
+df_mosquito <- df_mosquito %>%
+  mutate(simulation = rep(1:(n() / 25), each = 25))
+
+df_mosquito_long <- df_mosquito %>%
+  pivot_longer(
+    cols = c(O_c, L_c, P_c, A1_c, F_c, A2_c),
+    names_to = "stage",
+    values_to = "count"
+  )
+
+df_mosquito_long <- df_mosquito_long %>%
+  mutate(stage = factor(stage, levels = c("O_c", "L_c", "P_c", "A1_c", "F_c", "A2_c")))
+
+df_mosquito_summary <- df_mosquito_long %>%
+  group_by(time, stage) %>%
+  summarize(count = mean(count), .groups = "drop")
+
+
+# Shift the time column so first entry becomes 0
+df_mosquito_summary$time_shifted <- df_mosquito_summary$time - min(df_mosquito_summary$time)
+
+p_mosquito <- ggplot(df_mosquito_summary, aes(x = time_shifted, y = count, color = stage)) +
+  geom_line() +
+  geom_point(size = 0.5)+
+  labs(x = expression(italic(t ) (days)), y = "Mosquito population") +
+  scale_x_continuous(limits = xlims) +
+  theme_minimal(base_size = 10)+
+  theme(
+    legend.position = c(0.2, 0.98),   # (x, y) in relative plot coordinates (1 = right/top)
+    legend.justification = c("right", "top"),  # anchor legend’s top-right corner
+    legend.background = element_rect(fill = alpha("white", 0.6), color = "grey80"), # optional background box
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 6),
+    legend.key.size = unit(0.6, "lines") 
+  )
+
+xlims <- range(c(sobol_df$time, df_temps$time, df_water$time, df_mosquito_summary$time), na.rm = TRUE)
+
+combined <- (p_sobol | p_temp / p_water / p_mosquito) +
+  plot_layout(heights = c(6, 1, 1,1))
+```
+
+```{r - save plots and data}
+save.image("Culex_outsync.RData")
+ggsave(plot = combined, file = paste0("indices_culex_insync.png"),
+       width = 6, height = 5, device = png, scale=1.6)
+ggsave(plot = combined, file = paste0("indices_culex_insync_6_4.png"),
+       width = 6, height = 4, dpi = 500, scale = 1.5)
+ggsave(plot = combined, file = paste0("indices_culex_insync.pdf"),
+       width = 6, height = 5, device = pdf, scale=1.6)
+ggsave("indices_culex_insync_6_45.pdf", plot = combined, width = 6, height = 4.5)
+```
+
